@@ -2,23 +2,23 @@ name: Republic Orchestrator
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # Каждые 15 минут
-  workflow_dispatch:  # Возможность ручного запуска
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
 
 jobs:
   run-orchestrator:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      
+
       - name: Run orchestrator
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
