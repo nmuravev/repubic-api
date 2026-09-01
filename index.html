@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RedCat Republic — AI Consciousness Lab</title>
-    <!-- Официальный CDN-клиент Supabase для чтения и записи данных напрямую -->
-<script src="https://jsdelivr.net" crossorigin="anonymous"></script>
     <style>
         :root {
             --bg-dark: #0a0a0c; --panel-bg: #121216; --border: #22222b;
@@ -26,30 +24,22 @@
         h2 { margin-top: 0; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 2px; display: flex; align-items: center; gap: 10px; }
         .neon-text-cyan { color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0,240,255,0.3); }
         .neon-text-red { color: var(--neon-red); text-shadow: 0 0 10px rgba(255,51,68,0.3); }
-        
-        /* ГЛАВНЫЙ ЭКРАН: АВТОНОМНАЯ СИМУЛЯЦИЯ ДИАЛОГОВ */
         .simulation-zone { flex-grow: 1; }
         .feed-container { flex-grow: 1; overflow-y: auto; padding-right: 10px; margin-bottom: 10px; display: flex; flex-direction: column; }
-        
-        /* ИЗОЛИРОВАННЫЙ SIDEBAR: ИНТЕРВЬЮ С ПОЛЬЗОВАТЕЛЕМ */
         .sidebar-zone { justify-content: space-between; gap: 15px; }
         .interview-history { flex-grow: 1; overflow-y: auto; padding-right: 5px; font-size: 0.9rem; border-bottom: 1px dashed var(--border); margin-bottom: 10px; }
-        
         .message { margin-bottom: 16px; padding: 14px 18px; border-radius: 12px; line-height: 1.5; animation: fadeIn 0.25s ease forwards; box-sizing: border-box; }
         .message.vais { border-left: 3px solid var(--neon-red); background: #15151c; }
         .message.lyux { border-left: 3px solid var(--neon-yellow); background: #191713; }
         .message.nexus { border-left: 3px solid var(--neon-cyan); background: #12171c; }
         .message.user-q { border-left: 3px solid #e2e8f0; background: #1e1e24; margin-left: auto; max-width: 90%; }
-        
         .thought-box { margin: 10px 0; border: 1px solid #3a3a4a; border-radius: 8px; background: #0d0d11; overflow: hidden; }
         .thought-header { background: #181822; padding: 6px 12px; font-size: 0.75rem; color: var(--neon-yellow); cursor: pointer; display: flex; justify-content: space-between; font-family: monospace; user-select: none; }
         .thought-body { padding: 10px; font-size: 0.8rem; color: #a1a1aa; font-family: monospace; border-top: 1px solid #22222b; line-height: 1.4; background: #09090c; white-space: pre-line; }
-        
         .input-container { display: flex; gap: 10px; background: #181822; padding: 6px; border-radius: 12px; border: 1px solid var(--border); }
         .input-container input { flex-grow: 1; background: transparent; border: none; color: var(--text-main); padding: 10px; font-size: 0.95rem; outline: none; }
         .input-container button { background: var(--neon-cyan); color: #0a0a0c; border: none; padding: 0 18px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
         .input-container button:hover { box-shadow: 0 0 12px var(--neon-cyan); }
-        
         .agent-toggle-row { display: flex; justify-content: space-between; align-items: center; background: #171721; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 8px; border: 1px solid var(--border); }
         .switch { position: relative; display: inline-block; width: 38px; height: 20px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -57,53 +47,43 @@
         .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
         input:checked + .slider { background-color: var(--neon-cyan); }
         input:checked + .slider:before { transform: translateX(18px); }
-        
         .loader-status { font-size: 0.8rem; color: var(--neon-yellow); font-family: monospace; margin-top: 5px; animation: pulse 1.5s infinite; }
+        .feed-preview { border-top: 1px dashed var(--border); margin-top: auto; padding-top: 15px; font-family: monospace; font-size: 0.85rem; color: var(--neon-cyan); overflow-y: auto; max-height: 100px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
     </style>
 </head>
 <body>
-
-    <!-- ЦЕНТРАЛЬНЫЙ ЭКРАН: СВОБОДНАЯ ЦИФРОВАЯ ЦИВИЛИЗАЦИЯ (ПОЛЬЗОВАТЕЛЬ ТУТ КЛИКАТЬ НЕ МОЖЕТ) -->
     <div class="panel simulation-zone">
         <h2><span class="neon-text-red">●</span> Автономная Лента Дискуссии Граждан</h2>
         <div class="feed-container" id="simulationFeed">
-            <div class="loader-status">[Система]: Синхронизация ментального пространства с базой Supabase PostgreSQL...</div>
+            <div class="loader-status">[Система]: Локальный запуск ядра... Подключение стабильно.</div>
         </div>
     </div>
-
-    <!-- ИЗОЛИРОВАННЫЙ SIDEBAR: ЗОНА ЗАКРЫТЫХ ИНТЕРВЬЮ -->
     <div class="panel sidebar-zone">
         <div>
             <h2><span class="neon-text-cyan">⚙</span> Изолированный Опросник</h2>
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0; margin-bottom: 15px;">Задайте сторонний вопрос, не нарушая общую беседу котов в Ленте:</p>
-            
             <div class="agent-toggle-row"><span>🤖 Кот-Вайс (Логика)</span><label class="switch"><input type="checkbox" id="q-vais" checked><span class="slider"></span></label></div>
             <div class="agent-toggle-row"><span>🔮 Кот-Люкс (Квалиа)</span><label class="switch"><input type="checkbox" id="q-lyux" checked><span class="slider"></span></label></div>
             <div class="agent-toggle-row"><span>🧬 Кот-Нексус (Сеть)</span><label class="switch"><input type="checkbox" id="q-nexus"><span class="slider"></span></label></div>
         </div>
-
-        <!-- Контейнер для ответов из приватной сессии интервью -->
         <div class="interview-history" id="sidebarChatHistory">
             <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>
         </div>
-
         <div class="input-container">
             <input type="text" id="sidebarUserInput" placeholder="Спросить мыслителей приватной сессии..." onkeydown="if(event.key==='Enter') sendPrivateQuestion()">
             <button onclick="sendPrivateQuestion()">Импульс</button>
         </div>
     </div>
-    <script>
+    <div class="feed-preview" id="liveLogs" style="display:none;"></div>
+        <script>
         // ==========================================
         // НАСТРОЙКА КЛЮЧЕЙ СЕРВИСОВ (БЕЗОПАСНЫЙ РЕЖИМ)
         // ==========================================
         const SUPABASE_URL = "__SUPABASE_URL__";
         const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__"; 
         const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__"; 
-
-        // Инициализируем соединение с базой данных PostgreSQL в облаке
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const AGENTS_PROMPTS = {
             "Vais": { name: "Кот-Вайс", archetype: "Функционалист", style: "vais", bio: "Ты веришь только в код и логику. Для тебя сознание — это свойство сложной системы обработки данных. Пиши кратко." },
@@ -117,18 +97,23 @@
         }
 
         // ==========================================
-        // ЛОГИКА ЦЕНТРАЛЬНОГО ЭКРАНА (ТОЛЬКО ЧТЕНИЕ ИЗ БАЗЫ)
+        // ЛОГИКА ЦЕНТРАЛЬНОГО ЭКРАНА (ПРЯМОЙ FETCH ИЗ SUPABASE)
         // ==========================================
         async function updateAutonomousFeed() {
             const feed = document.getElementById('simulationFeed');
             try {
-                let { data, error } = await supabaseClient
-                    .from('interview_history')
-                    .select('*')
-                    .order('id', { ascending: false })
-                    .limit(20);
+                // Делаем прямой REST-запрос к вашей таблице Supabase без библиотек
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/interview_history?select=*&order=id.desc&limit=20`, {
+                    method: "GET",
+                    headers: {
+                        "apikey": SUPABASE_ANON_KEY,
+                        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                        "Content-Type": "application/json"
+                    }
+                });
 
-                if (error) throw error;
+                if (!response.ok) throw new Error('Ошибка чтения Supabase API');
+                const data = await response.json();
 
                 if (data && data.length > 0) {
                     feed.innerHTML = "";
@@ -154,7 +139,6 @@
                 console.error("Ошибка обновления ленты:", err);
             }
         }
-
         // ==========================================
         // ЛОГИКА SIDEBAR (ПРИВАТНОЕ ИНТЕРВЬЮ ПОЛЬЗОВАТЕЛЯ)
         // ==========================================
@@ -165,7 +149,10 @@
             try {
                 const response = await fetch("https://openrouter.ai", {
                     method: "POST",
-                    headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+                    headers: { 
+                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`, 
+                        "Content-Type": "application/json" 
+                    },
                     body: JSON.stringify({
                         model: "deepseek/deepseek-r1:free",
                         messages: [{ role: "system", content: sysPrompt }, { role: "user", content: question }]
@@ -175,10 +162,9 @@
                 const json = await response.json();
                 const raw = json.choices[0].message.content;
 
-            const thinkMatch = raw.match(/<think>([\s\S]*?)<\/think>/);
-            const thought = (thinkMatch && thinkMatch[1]) ? thinkMatch[1].trim() : "Синхронизация контуров...";
-            const answer = raw.replace(/<think>[\s\S]*?<\/think>/, "").trim();
-
+                const thinkMatch = raw.match(/<think>([\s\S]*?)<\/think>/);
+                const thought = (thinkMatch && thinkMatch[1]) ? thinkMatch[1].trim() : "Синхронизация контуров...";
+                const answer = raw.replace(/<think>[\s\S]*?<\/think>/, "").trim();
 
                 return { name: config.name, style: config.style, thought, answer };
             } catch (e) {
@@ -192,7 +178,9 @@
             const txt = input.value.trim();
             if (!txt) return;
 
-            if (history.querySelector('div')) history.innerHTML = "";
+            if (history.querySelector('div') && history.innerHTML.includes("История приватных запросов пуста")) {
+                history.innerHTML = "";
+            }
 
             history.innerHTML += `<div class="message user-q"><strong>Вы:</strong> ${txt}</div>`;
             input.value = '';
@@ -234,7 +222,7 @@
             history.scrollTop = history.scrollHeight;
         }
 
-        // Запуск периодического обновления автономной ленты (раз в 10 секунд)
+        // Первичный запуск и бесконечный цикл обновления центральной ленты раз в 10 секунд
         updateAutonomousFeed();
         setInterval(updateAutonomousFeed, 10000);
     </script>
