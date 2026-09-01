@@ -110,7 +110,7 @@ const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
                     method: "GET",
                     headers: {
                         "apikey": SUPABASE_ANON_KEY,
-                        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                        "Authorization": "Bearer " + SUPABASE_ANON_KEY,
                         "Content-Type": "application/json"
                     }
                 });
