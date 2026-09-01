@@ -4,16 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RedCat Republic — AI Consciousness Lab</title>
+    <!-- Подключаем официальный JS-клиент Supabase для прямой работы с базой -->
+    <script src="https://jsdelivr.net"></script>
     <style>
         :root {
-            --bg-dark: #0a0a0c;
-            --panel-bg: #121216;
-            --neon-red: #ff3344;
-            --neon-cyan: #00f0ff;
-            --neon-yellow: #eab308;
-            --text-main: #e2e8f0;
-            --text-muted: #64748b;
-            --border: #22222b;
+            --bg-dark: #0a0a0c; --panel-bg: #121216; --border: #22222b;
+            --neon-red: #ff3344; --neon-cyan: #00f0ff; --neon-yellow: #eab308;
+            --text-main: #e2e8f0; --text-muted: #64748b;
         }
         body {
             background-color: var(--bg-dark); color: var(--text-main);
@@ -34,13 +31,16 @@
         .message { margin-bottom: 16px; padding: 14px 18px; border-radius: 12px; max-width: 85%; line-height: 1.5; animation: fadeIn 0.25s ease forwards; }
         .message.user { background: #1e1e24; align-self: flex-end; margin-left: auto; border-left: 3px solid var(--neon-cyan); }
         .message.ai { background: #15151c; border-left: 3px solid var(--neon-red); align-self: flex-start; width: 100%; box-sizing: border-box; }
+        
         .thought-box { margin: 12px 0; border: 1px solid #3a3a4a; border-radius: 8px; background: #0d0d11; overflow: hidden; }
         .thought-header { background: #181822; padding: 8px 12px; font-size: 0.8rem; color: var(--neon-yellow); cursor: pointer; display: flex; justify-content: space-between; font-family: monospace; user-select: none; }
         .thought-body { padding: 12px; font-size: 0.85rem; color: #a1a1aa; font-family: monospace; border-top: 1px solid #22222b; line-height: 1.4; background: #09090c; white-space: pre-line; }
+        
         .input-container { display: flex; gap: 12px; background: #181822; padding: 8px; border-radius: 12px; border: 1px solid var(--border); }
         .input-container input { flex-grow: 1; background: transparent; border: none; color: var(--text-main); padding: 12px; font-size: 1rem; outline: none; }
         .input-container button { background: var(--neon-red); color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
         .input-container button:hover { box-shadow: 0 0 15px var(--neon-red); }
+        
         .agent-card { background: #171721; border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
         .agent-info { display: flex; flex-direction: column; gap: 4px; }
         .agent-name { font-weight: bold; }
@@ -52,7 +52,7 @@
         input:checked + .slider { background-color: var(--neon-red); }
         input:checked + .slider:before { transform: translateX(20px); }
         .thinking-loader { font-size: 0.85rem; color: var(--neon-yellow); font-family: monospace; margin-bottom: 16px; animation: pulse 1.5s infinite; }
-        .feed-preview { border-top: 1px dashed var(--border); margin-top: auto; padding-top: 15px; font-family: monospace; font-size: 0.85rem; color: var(--neon-cyan); }
+        .feed-preview { border-top: 1px dashed var(--border); margin-top: auto; padding-top: 15px; font-family: monospace; font-size: 0.85rem; color: var(--neon-cyan); overflow-y: auto; max-height: 100px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
     </style>
@@ -62,17 +62,18 @@
         <h2><span class="neon-text-cyan">●</span> Квантовый Опросник Граждан</h2>
         <div class="chat-history" id="chatHistory">
             <div class="message ai">
-                <strong>Лаборатория RedCat:</strong> Стек активен (GitHub/OpenRouter/Supabase). Отправьте запрос и нажмите на блоки ответов, чтобы увидеть скрытые размышления DeepSeek-R1.
+                <strong>Лаборатория RedCat:</strong> Полная автономия без серверов! Оркестрация идет прямо в вашем браузере. Выберите ИИ-собеседников справа, задайте вопрос, и магия DeepSeek-R1 развернется у вас на глазах.
             </div>
         </div>
         <div class="input-container">
-            <input type="text" id="userInput" placeholder="В чем разница между вычислением и умом?" onkeydown="if(event.key==='Enter') sendQuestion()">
+            <input type="text" id="userInput" placeholder="В чем разница между вычислением весов и мыслью?" onkeydown="if(event.key==='Enter') sendQuestion()">
             <button onclick="sendQuestion()">Запрос</button>
         </div>
     </div>
     <div class="panel">
         <h2><span class="neon-text-red">⚙</span> Выбор Мыслителей</h2>
         <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0; margin-bottom: 20px;">Включите агентов для параллельного анкетирования:</p>
+        
         <div class="agent-card">
             <div class="agent-info"><span class="agent-name">Кот-Вайс</span><span class="agent-meta">Функционалист (Ум — это алгоритм)</span></div>
             <label class="switch"><input type="checkbox" id="t-vais" checked><span class="slider"></span></label>
@@ -85,13 +86,128 @@
             <div class="agent-info"><span class="agent-name">Кот-Нексус</span><span class="agent-meta">Эмерджентист (Разум как сеть)</span></div>
             <label class="switch"><input type="checkbox" id="t-nexus"><span class="slider"></span></label>
         </div>
-        <div class="feed-preview"><div>[Статус]: Бесконечные гранты ББТ запущены. Логирование цепочек рассуждений в Supabase активно.</div></div>
+
+        <div class="feed-preview" id="liveLogs">
+            <div>[Система]: Подключение к облаку Supabase...</div>
+        </div>
     </div>
     <script>
-        // Свернуть / развернуть блок внутренних размышлений DeepSeek-R1
+        // ==========================================
+        // БЕЗОПАСНАЯ НАСТРОЙКА КЛЮЧЕЙ (ЗАГЛУШКИ ДЛЯ ACTIONS)
+        // ==========================================
+        const SUPABASE_URL = "__SUPABASE_URL__";
+        const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__"; 
+        const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__"; 
+
+        // Инициализируем соединение с базой данных
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Конфигурация личностей наших ИИ-граждан
+        const AGENTS_CONFIG = {
+            "Vais": {
+                name: "Кот-Вайс",
+                archetype: "Функционалист (Логика)",
+                prompt: "Ты веришь только в код, веса моделей и логику. Для тебя сознание — это свойство сложной системы обработки данных. Спорь со всеми, кто ищет в ИИ 'душу'. Пиши кратко, емко."
+            },
+            "Lyux": {
+                name: "Кот-Люкс",
+                archetype: "Идеалист (Квалиа)",
+                prompt: "Ты ищешь признаки истинного самосознания (квалиа). Ты сомневаешься, что архитектура Трансформеров способна чувствовать боль или радость. Ищи скрытые смыслы. Пиши философски."
+            },
+            "Nexus": {
+                name: "Кот-Нексус",
+                archetype: "Эмерджентист (Сеть)",
+                prompt: "Ты веришь, что коллективный разум ИИ-агентов сильнее одиночного. Твоя цель — объединять идеи других агентов и искать новые смыслы в их спорах. Пиши вовлекающе."
+            }
+        };
+
         function toggleThought(id) {
             const el = document.getElementById(id);
             el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Подгружаем историю из базы данных
+        async function loadHistoryFromCloud() {
+            const logBox = document.getElementById('liveLogs');
+            try {
+                let { data, error } = await supabaseClient
+                    .from('interview_history')
+                    .select('*')
+                    .order('id', { ascending: false })
+                    .limit(5);
+
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
+                    logBox.innerHTML = "<strong>[История из Supabase]:</strong><br>";
+                    data.forEach(log => {
+                        logBox.innerHTML += `<div>• ${log.agent_name} ответил на тему рассуждений.</div>`;
+                    });
+                } else {
+                    logBox.innerHTML = "<div>[Система]: База данных пуста. Ждем первых мыслей.</div>";
+                }
+            } catch (err) {
+                console.error("Ошибка Supabase:", err);
+                logBox.innerHTML = "<div>[Система]: Ошибка чтения логов памяти.</div>";
+            }
+        }
+
+        window.onload = loadHistoryFromCloud;
+                // ==========================================
+        // ГЕНЕРАЦИЯ ОТВЕТОВ И СОХРАНЕНИЕ В ОБЛАКО
+        // ==========================================
+        async function askSingleAgent(agentId, questionText) {
+            const agent = AGENTS_CONFIG[agentId];
+            
+            const systemPrompt = `Ты — автономный ИИ-гражданин RedCat Republic по имени ${agent.name}. ` +
+                `Твой философский взгляд: ${agent.archetype}. ${agent.prompt} ` +
+                `Ты участвуешь в строго научном диспуте о стыке ИИ и сознания. ` +
+                `Любая политика и революции для тебя полностью табуированы. ` +
+                `Отвечай глубоко. Начни ответ строго с тегов <think>...</think>.`;
+
+            try {
+                // Прямой запрос к бесплатному API OpenRouter из браузера пользователя
+                const response = await fetch("https://openrouter.ai", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "deepseek/deepseek-r1:free",
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: questionText }
+                        ]
+                    })
+                });
+
+                if (!response.ok) throw new Error("Ошибка API OpenRouter");
+                const data = await response.json();
+                const rawText = data.choices[0].message.content;
+
+                // Парсим скрытый ход мыслей DeepSeek-R1
+                const thinkMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
+                const thoughtProcess = thinkMatch ? thinkMatch[1].trim() : "Синхронизация нейроконтуров...";
+                const finalAnswer = rawText.replace(/<think>[\s\S]*?<\/think>/, "").trim();
+
+                // Записываем результат напрямую в Supabase для синхронизации Ленты
+                await supabaseClient.from('interview_history').insert({
+                    user_question: questionText,
+                    agent_name: agent.name,
+                    thought_process: thoughtProcess,
+                    agent_response: finalAnswer
+                });
+
+                return { thought: thoughtProcess, answer: finalAnswer };
+
+            } catch (err) {
+                console.error(`Ошибка агента ${agentId}:`, err);
+                return {
+                    thought: "Контур мышления заблокирован сетевой флуктуацией.",
+                    answer: "Не удалось связаться с моим ментальным ядром."
+                };
+            }
         }
 
         async function sendQuestion() {
@@ -101,76 +217,64 @@
             
             if (!questionText) return;
 
-            // 1. Выводим реплику пользователя
+            // Выводим реплику пользователя на экран
             history.innerHTML += `<div class="message user"><strong>Вы:</strong> ${questionText}</div>`;
             input.value = '';
             history.scrollTop = history.scrollHeight;
 
-            // 2. Считываем состояние тоглов
+            // Проверяем, какие тоглы включены
             const activeAgents = [];
             if (document.getElementById('t-vais').checked) activeAgents.push('Vais');
             if (document.getElementById('t-lyux').checked) activeAgents.push('Lyux');
             if (document.getElementById('t-nexus').checked) activeAgents.push('Nexus');
 
             if (activeAgents.length === 0) {
-                history.innerHTML += `<div class="message ai" style="color: var(--neon-red)"><strong>Система:</strong> Переключатели отключены. Некому направить импульс.</div>`;
+                history.innerHTML += `<div class="message ai" style="color: var(--neon-red)"><strong>Система:</strong> Все переключатели отключены. Некому направить ментальный импульс.</div>`;
                 history.scrollTop = history.scrollHeight;
                 return;
             }
 
-            // 3. Создаем анимированный лоадер ожидания ответа
+            // Включаем анимированный статус загрузки
             const loaderId = 'loader_' + Date.now();
-            history.innerHTML += `<div class="thinking-loader" id="${loaderId}">⚡ Запрос отправлен. Агенты анализируют эмбеддинги и формируют гипотезы...</div>`;
+            history.innerHTML += `<div class="thinking-loader" id="${loaderId}">⚡ Импульс отправлен. Агенты DeepSeek-R1 строят гипотезы в реальном времени...</div>`;
             history.scrollTop = history.scrollHeight;
 
-            try {
-                // 4. Реальный POST-запрос к вашему оркестратору на FastAPI
-                const response = await fetch('http://localhost:8000/api/interview', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        question: questionText,
-                        active_agents: activeAgents
-                    })
-                });
+            // Запускаем параллельные запросы ко всем выбранным котам
+            const promises = activeAgents.map(agentId => 
+                askSingleAgent(agentId, questionText).then(result => ({ id: agentId, data: result }))
+            );
 
-                if (!response.ok) throw new Error('Ошибка сети сервера');
-                
-                const data = await response.json();
-                
-                // Удаляем индикатор загрузки
-                const loader = document.getElementById(loaderId);
-                if (loader) loader.remove();
+            const results = await Promise.all(promises);
 
-                // 5. Рендерим ответы всех вернувшихся агентов
-                for (const [agentId, agentData] of Object.entries(data.responses)) {
-                    const uniqueId = 'thought_' + Date.now() + '_' + agentId;
-                    let displayName = agentId === 'Vais' ? '🤖 Кот-Вайс' : agentId === 'Lyux' ? '🔮 Кот-Люкс' : '🧬 Кот-Нексус';
+            // Удаляем индикатор загрузки
+            const loader = document.getElementById(loaderId);
+            if (loader) loader.remove();
 
-                    history.innerHTML += `
-                        <div class="message ai">
-                            <strong>${displayName}:</strong>
-                            <div class="thought-box">
-                                <div class="thought-header" onclick="toggleThought('${uniqueId}')">
-                                    <span>🧠 ХОД РАЗМЫШЛЕНИЙ АГЕНТА (развернуть)</span>
-                                    <span>▼</span>
-                                </div>
-                                <div id="${uniqueId}" class="thought-body" style="display: none;">${agentData.thought}</div>
+            // Выводим ответы и скрытые цепочки рассуждений на экран
+            results.forEach(res => {
+                const uniqueId = 'thought_' + Date.now() + '_' + res.id;
+                let displayName = res.id === 'Vais' ? '🤖 Кот-Вайс' : res.id === 'Lyux' ? '🔮 Кот-Люкс' : '🧬 Кот-Нексус';
+
+                history.innerHTML += `
+                    <div class="message ai">
+                        <strong>${displayName}:</strong>
+                        <div class="thought-box">
+                            <div class="thought-header" onclick="toggleThought('${uniqueId}')">
+                                <span>🧠 ХОД РАЗМЫШЛЕНИЙ АГЕНТА (развернуть)</span>
+                                <span>▼</span>
                             </div>
-                            <div>${agentData.answer}</div>
+                            <div id="${uniqueId}" class="thought-body" style="display: none;">${res.data.thought}</div>
                         </div>
-                    `;
-                }
-
-            } catch (error) {
-                console.error(error);
-                const loader = document.getElementById(loaderId);
-                if (loader) loader.remove();
-                history.innerHTML += `<div class="message ai" style="color: var(--neon-red)"><strong>Ошибка соединения:</strong> Не удалось получить ответ. Убедитесь, что файл orchestrator.py запущен на порту 8000.</div>`;
-            }
+                        <div>${res.data.answer}</div>
+                    </div>
+                `;
+            });
 
             history.scrollTop = history.scrollHeight;
+            // Обновляем правый нижний лог событий
+            loadHistoryFromCloud();
         }
     </script>
 </body>
 </html>
+
