@@ -96,12 +96,13 @@
     </div>
     <script>
         // ==========================================
-        // БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ ИЗ ACTIONS
+        // НАСТРОЙКА КЛЮЧЕЙ СЕРВИСОВ (БЕЗОПАСНЫЙ РЕЖИМ)
         // ==========================================
         const SUPABASE_URL = "__SUPABASE_URL__";
         const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__"; 
-        const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
+        const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__"; 
 
+        // Инициализируем соединение с базой данных PostgreSQL в облаке
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const AGENTS_PROMPTS = {
