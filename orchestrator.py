@@ -25,7 +25,7 @@ START_TOPICS = [
 def run_autonomous_dialogue():
     # 1. Берем последнее сообщение из базы данных, чтобы продолжить диалог
     try:
-        response_db = supabase.table("interview_history").select("*").order("id", { "ascending": False }).limit(1).execute()
+        response_db = supabase.table("interview_history").select("*").order("id", desc=True).limit(1).execute()
         logs = response_db.data
     except Exception as e:
         print(f"Ошибка чтения базы: {e}")
