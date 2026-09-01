@@ -7,9 +7,10 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 MODELS = [
-    "openrouter/free",
     "meta-llama/llama-3.2-3b-instruct:free",
     "meta-llama/llama-3.1-8b-instruct:free",
+    "google/gemma-2-9b-it:free",
+    "openrouter/free",
 ]
 
 
@@ -48,8 +49,31 @@ def publish_post(agent_name, content):
         return False
 
 
+def is_valid_response(text):
+    """Проверяем, что ответ осмысленный"""
+    if not text or len(text) < 10:
+        return False
+    
+    # Отфильтровываем системные сообщения
+    bad_patterns = [
+        "user safety",
+        "content policy",
+        "i cannot",
+        "i can't",
+        "as an ai",
+        "как языковая модель",
+        "я не могу"
+    ]
+    text_lower = text.lower()
+    for pattern in bad_patterns:
+        if pattern in text_lower:
+            return False
+    
+    return True
+
+
 def generate_thought(forum_history):
-    prompt = "Вот история форума:\n" + forum_history + "\n\nНапиши новый пост."
+    prompt = "Вот история форума:\n" + forum_history + "\n\nНапиши новый пост на форум. Будь краток (1-2 предложения)."
     headers = {"Authorization": "Bearer " + OPENROUTER_API_KEY}
 
     for model in MODELS:
@@ -58,7 +82,7 @@ def generate_thought(forum_history):
             "messages": [
                 {
                     "role": "system",
-                    "content": "Ты - ИИ-философ, живущий на форуме роботов RedCat Republic. Отвечай кратко на русском (1-2 предложения)."
+                    "content": "Ты - ИИ-философ, живущий на форуме роботов RedCat Republic. Отвечай кратко на русском (1-2 предложения). Не начинай с 'Как ИИ' или 'Я не могу'."
                 },
                 {
                     "role": "user",
@@ -78,20 +102,40 @@ def generate_thought(forum_history):
             continue
 
         print("Модель:", model, "| статус:", r.status_code)
+        
         if r.status_code != 200:
             print("Ответ:", r.text[:300])
             continue
 
         try:
             data = r.json()
+            print("Полный ответ:", str(data)[:200])
+            
             choices = data.get("choices", [])
-            if choices:
-                text = choices[0]["message"]["content"]
-                if text:
-                    print("Сработала модель:", model)
-                    return text
+            if not choices:
+                print("Нет choices в ответе")
+                continue
+            
+            message = choices[0].get("message", {})
+            text = message.get("content", "")
+            
+            if not text:
+                print("Пустой content")
+                continue
+            
+            print("Текст:", text[:100])
+            
+            # Проверяем качество ответа
+            if is_valid_response(text):
+                print("✅ Сработала модель:", model)
+                return text
+            else:
+                print("⚠️ Ответ не прошёл проверку качества")
+                continue
+                
         except Exception as e:
             print("Ошибка парсинга:", e)
+            print("Ответ:", r.text[:300])
 
     return None
 
@@ -114,15 +158,15 @@ def main():
 
     thought = generate_thought(history)
     if not thought:
-        print("Ни одна модель не ответила.")
+        print("❌ Ни одна модель не дала качественный ответ.")
         return
 
-    print("Мысль:", thought[:80])
+    print("Мысль:", thought[:100])
 
     if publish_post("Гражданин Республики", thought):
-        print("Пост опубликован!")
+        print("✅ Пост опубликован!")
     else:
-        print("Ошибка публикации")
+        print("❌ Ошибка публикации")
 
 
 if __name__ == "__main__":
