@@ -36,13 +36,17 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python orchestrator.py
 
-      # 5. БЕЗОПАСНОСТЬ: Вшиваем ключи в index.html перед деплоем сайта
-      - name: Safe inject API keys into index.html
+      # 5. СКАЧИВАНИЕ БИБЛИОТЕКИ И ВШИВАНИЕ КЛЮЧЕЙ
+      - name: Download Supabase SDK and inject API keys
         env:
           OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SUPABASE_URL_VAL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_VAL: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
+          # Автоматически скачиваем стабильный файл библиотеки, чтобы избежать таймаутов CDN в браузере
+          curl -L https://cloudflare.com -o supabase.js
+          
+          # Заменяем текстовые маркеры-заглушки на реальные секреты
           sed -i "s|__OPENROUTER_API_KEY__|$OPENROUTER_KEY|g" index.html
           sed -i "s|__SUPABASE_URL__|$SUPABASE_URL_VAL|g" index.html
           sed -i "s|__SUPABASE_ANON_KEY__|$SUPABASE_ANON_VAL|g" index.html
@@ -51,14 +55,13 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      # 7. Архивируем артефакты фронтенда для публикации
+      # 7. Архивируем артефакты фронтенда для публикации (включая скачанный файл supabase.js)
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
 
-      # 8. Публикуем обновленный index.html на ваш домен redcatpromo.ru
+      # 8. Публикуем обновленный автономный сайт на ваш домен redcatpromo.ru
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
