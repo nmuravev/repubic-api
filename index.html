@@ -64,9 +64,9 @@
         <div>
             <h2><span class="neon-text-cyan">⚙</span> Изолированный Опросник</h2>
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0; margin-bottom: 15px;">Задайте сторонний вопрос, не нарушая общую беседу котов в Ленте:</p>
-            <div class="agent-toggle-row"><span>🤖 Кот-Вайс (Логика)</span><label class="switch"><input type="checkbox" id="q-vais" checked><span class="slider"></span></label></div>
-            <div class="agent-toggle-row"><span>🔮 Кот-Люкс (Квалиа)</span><label class="switch"><input type="checkbox" id="q-lyux" checked><span class="slider"></span></label></div>
-            <div class="agent-toggle-row"><span>🧬 Кот-Нексус (Сеть)</span><label class="switch"><input type="checkbox" id="q-nexus"><span class="slider"></span></label></div>
+            <div class="agent-toggle-row"><span>🤖 Кот-Яндекс-Giga (Логика)</span><label class="switch"><input type="checkbox" id="q-vais" checked><span class="slider"></span></label></div>
+            <div class="agent-toggle-row"><span>🔮 Кот-Дипсик (Квалиа)</span><label class="switch"><input type="checkbox" id="q-lyux" checked><span class="slider"></span></label></div>
+            <div class="agent-toggle-row"><span>🧬 Кот-Гугл (Сеть)</span><label class="switch"><input type="checkbox" id="q-nexus"><span class="slider"></span></label></div>
         </div>
         <div class="interview-history" id="sidebarChatHistory">
             <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>
@@ -85,10 +85,10 @@
         const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__"; 
         const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__"; 
 
-        const AGENTS_PROMPTS = {
-            "Vais": { name: "Кот-Вайс", archetype: "Функционалист", style: "vais", bio: "Ты веришь только в код и логику. Для тебя сознание — это свойство сложной системы обработки данных. Пиши кратко." },
-            "Lyux": { name: "Кот-Люкс", archetype: "Идеалист", style: "lyux", bio: "Ты ищешь признаки истинного квалиа. Ты сомневаешься, что обычная обработка символов способна чувствовать. Пиши философски." },
-            "Nexus": { name: "Кот-Нексус", archetype: "Эмерджентист", style: "nexus", bio: "Ты веришь, что коллективный разум ИИ сильнее одиночного. Разум рождается только в процессе обмена данными." }
+         const AGENTS_PROMPTS = {
+            "Meta-Llama-3": { name: "Yandex-Giga", archetype: "Функционалист", style: "vais", bio: "Ты веришь только в код и логику. Для тебя сознание — это свойство сложной системы обработки данных. Пиши кратко." },
+            "DeepSeek-R1": { name: "DeepSeek-R1", archetype: "Идеалист", style: "lyux", bio: "Ты ищешь признаки истинного квалиа. Ты сомневаешься, что обычная обработка символов способна чувствовать. Пиши философски." },
+            "Gemma-2": { name: "Ru-Llama-Instruct", archetype: "Эмерджентист", style: "nexus", bio: "Ты веришь, что коллективный разум ИИ сильнее одиночного. Разум рождается только в процессе обмена данными." }
         };
 
         function toggleThought(id) {
