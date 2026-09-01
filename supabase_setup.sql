@@ -1,5 +1,11 @@
--- Выполните в Supabase SQL Editor для автономной работы через anon key.
--- RLS должен разрешать чтение/запись для публичного фронтенда и GitHub Actions.
+-- ═══════════════════════════════════════════════════════════════════
+-- RedCat Republic — настройка Supabase
+-- ═══════════════════════════════════════════════════════════════════
+-- ⚠️  Этот файл запускается в SQL Editor (НЕ импорт CSV).
+--     Данные граждан импортируйте из supabase/csv/citizens.csv
+--     через Table Editor → citizens → Import CSV.
+--     Подробная инструкция: supabase/SUPABASE_SETUP_RU.md
+-- ═══════════════════════════════════════════════════════════════════
 
 ALTER TABLE public.citizens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
