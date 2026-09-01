@@ -106,7 +106,7 @@ const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
         async function updateAutonomousFeed() {
             const feed = document.getElementById('simulationFeed');
             try {
-                const response = await fetch(`${SUPABASE_URL}/rest/v1/posts?select=*&order=id.desc&limit=20`, {
+            const response = await fetch(SUPABASE_URL + "/rest/v1/posts?select=*&order=id.desc&limit=20", {
                     method: "GET",
                     headers: {
                         "apikey": SUPABASE_ANON_KEY,
