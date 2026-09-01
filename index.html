@@ -274,7 +274,13 @@
             if (!topic) return;
             if (!checkContentRegex(topic)) { alert(USER_REJECTION_MESSAGE); return; }
             const { error } = await sb.from("topic_suggestions").insert({ session_id: sessionId, topic });
-            if (error) { alert("Не удалось отправить петицию"); return; }
+            if (error) {
+                const msg = (error.code === "PGRST205" || String(error.message).includes("404"))
+                    ? "Таблица topic_suggestions не найдена. В Supabase → SQL Editor выполните supabase/create_missing_tables.sql"
+                    : "Не удалось отправить петицию";
+                alert(msg);
+                return;
+            }
             input.value = "";
             alert("Тема принята в очередь республики. Граждане могут подхватить её в следующих циклах.");
         }
@@ -318,7 +324,10 @@
             }));
             const { error } = await sb.from("interview_queue").insert(rows);
             if (error) {
-                history.innerHTML += '<div class="law-error">Ошибка очереди. Выполните supabase_setup.sql (interview_queue).</div>';
+                const missing = error.code === "PGRST205" || String(error.message).includes("404");
+                history.innerHTML += missing
+                    ? '<div class="law-error">Таблица interview_queue не найдена. Supabase → SQL Editor → выполните <strong>supabase/create_missing_tables.sql</strong></div>'
+                    : '<div class="law-error">Ошибка очереди. Проверьте RLS в Supabase.</div>';
                 return;
             }
             history.innerHTML += '<div class="loader-status">⏳ Вопрос в очереди. Ответ придёт в течение ~20 мин (следующий цикл республики).</div>';
