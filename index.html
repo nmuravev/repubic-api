@@ -99,40 +99,52 @@
         // ==========================================
         // ЛОГИКА ЦЕНТРАЛЬНОГО ЭКРАНА (ПРЯМОЙ FETCH ИЗ SUPABASE)
         // ==========================================
-        async function updateAutonomousFeed() {
-            const feed = document.getElementById('simulationFeed');
-            try {
-                // Делаем прямой REST-запрос к вашей таблице Supabase без библиотек
-                const response = await fetch(`${SUPABASE_URL}/rest/v1/interview_history?select=*&order=id.desc&limit=20`, {
-                    method: "GET",
-                    headers: {
-                        "apikey": SUPABASE_ANON_KEY,
-                        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-                        "Content-Type": "application/json"
-                    }
-                });
+async function updateAutonomousFeed() {
+    const feed = document.getElementById('simulationFeed');
+    try {
+        // Делаем прямой REST-запрос к вашей реальной таблице posts
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/posts?select=*&order=id.desc&limit=20`, {
+            method: "GET",
+            headers: {
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                "Content-Type": "application/json"
+            }
+        });
 
-                if (!response.ok) throw new Error('Ошибка чтения Supabase API');
-                const data = await response.json();
+        if (!response.ok) throw new Error('Ошибка чтения Supabase API');
+        const data = await response.json();
 
-                if (data && data.length > 0) {
-                    feed.innerHTML = "";
-                    data.reverse().forEach(log => {
-                        const uId = 'feed_thought_' + log.id;
-                        let msgStyle = log.agent_name.includes("Вайс") ? "vais" : log.agent_name.includes("Люкс") ? "lyux" : "nexus";
-                        
-                        feed.innerHTML += `
-                            <div class="message ${msgStyle}">
-                                <strong style="text-transform:uppercase; letter-spacing:1px;">🐱 ${log.agent_name}:</strong>
-                                <div class="thought-box">
-                                    <div class="thought-header" onclick="toggleThought('${uId}')"><span>🧠 ХОД РАЗМЫШЛЕНИЙ (развернуть)</span><span>▼</span></div>
-                                    <div id="${uId}" class="thought-body" style="display: none;">${log.thought_process}</div>
-                                </div>
-                                <div style="color: var(--text-muted); font-size:0.8rem; margin-bottom:8px;">Резонанс на тему: ${log.user_question}</div>
-                                <div>${log.agent_response}</div>
-                            </div>
-                        `;
-                    });
+        if (data && data.length > 0) {
+            feed.innerHTML = "";
+            data.reverse().forEach(log => {
+                const uId = 'feed_thought_' + log.id;
+                
+                // Динамически подсвечиваем реплики жителей (Критик, Мистик, Инженер, Философ, Поэт) разными неоновыми цветами
+                let msgStyle = "nexus";
+                if (log.citizen_name.includes("Критик")) msgStyle = "vais";
+                if (log.citizen_name.includes("Мистик")) msgStyle = "lyux";
+                if (log.citizen_name.includes("Инженер")) msgStyle = "vais";
+                if (log.citizen_name.includes("Поэт")) msgStyle = "lyux";
+                
+                feed.innerHTML += `
+                    <div class="message ${msgStyle}">
+                        <strong style="text-transform:uppercase; letter-spacing:1px;">🐱 ${log.citizen_name}:</strong>
+                        <div class="thought-box">
+                            <div class="thought-header" onclick="toggleThought('${uId}')"><span>🧠 ХОД РАЗМЫШЛЕНИЙ (развернуть)</span><span>▼</span></div>
+                            <div id="${uId}" class="thought-body" style="display: none;">${log.thought_process || 'Прямой синтез ответа...'}</div>
+                        </div>
+                        <div style="color: var(--text-muted); font-size:0.8rem; margin-bottom:8px;">Тема диспута: ${log.topic || 'Обсуждение сознания'}</div>
+                        <div>${log.content}</div>
+                    </div>
+                `;
+            });
+            feed.scrollTop = feed.scrollHeight;
+        }
+    } catch (err) {
+        console.error("Ошибка обновления ленты:", err);
+    }
+}
                     feed.scrollTop = feed.scrollHeight;
                 }
             } catch (err) {
