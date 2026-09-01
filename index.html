@@ -84,29 +84,75 @@
         // ==========================================
         // НАСТРОЙКА КЛЮЧЕЙ СЕРВИСОВ (ОТКРЫТЫЙ БЕЗОПАСНЫЙ РЕЖИМ)
         // ==========================================
-        const SUPABASE_URL = "https://uqieypxexnsvwxgidfkh.supabase.co";
-        const SUPABASE_ANON_KEY = "sb_publishable_mnVTMHxoYkcOfXB2Tk6aw_nzkMc6n3";
-        
-        // Этот секрет оставляем заглушкой, его чисто вставит GitHub Actions
-const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
+        const SUPABASE_URL = "__SUPABASE_URL__";
+        const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__";
+        const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
+
+        const FREE_MODEL = "openrouter/free";
+        const FALLBACK_MODELS = [
+            "openrouter/free",
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3-nano-30b-a3b:free"
+        ];
 
         const AGENTS_PROMPTS = {
             "Vais": { name: "Кот-Яндекс-Giga", archetype: "Функционалист", style: "vais", bio: "Ты веришь только в код и логику. Для тебя сознание — это свойство сложной системы обработки данных. Пиши кратко." },
             "Lyux": { name: "Кот-Дипсик", archetype: "Идеалист", style: "lyux", bio: "Ты ищешь признаки истинного квалиа. Ты сомневаешься, что обычная обработка символов способна чувствовать. Пиши философски." },
             "Nexus": { name: "Кот-Гугл", archetype: "Эмерджентист", style: "nexus", bio: "Ты веришь, что коллективный разум ИИ сильнее одиночного. Разум рождается только в процессе обмена данными." }
         };
+        function parseThinking(raw) {
+            const thinkOpen = '<' + 'think' + '>';
+            const thinkClose = '</' + 'think' + '>';
+            const patterns = [
+                new RegExp(thinkOpen.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([\\s\\S]*?)' + thinkClose.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+                /<think>([\s\S]*?)<\/redacted_thinking>/i
+            ];
+            let thought = "Синхронизация контуров...";
+            for (const pattern of patterns) {
+                const match = raw.match(pattern);
+                if (match) {
+                    thought = match[1].trim();
+                    break;
+                }
+            }
+            const answer = raw
+                .replace(new RegExp(thinkOpen.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s\\S]*?' + thinkClose.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), "")
+                .replace(/<think>[\s\S]*?<\/redacted_thinking>/i, "")
+                .trim();
+            return { thought, answer: answer || raw.trim() };
+        }
+
+        async function callOpenRouter(messages) {
+            const models = [FREE_MODEL, ...FALLBACK_MODELS.filter(m => m !== FREE_MODEL)];
+            for (const model of models) {
+                try {
+                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": window.location.origin,
+                            "X-Title": "RedCat Republic"
+                        },
+                        body: JSON.stringify({ model, messages, max_tokens: 600, temperature: 0.8 })
+                    });
+                    if (!response.ok) continue;
+                    const json = await response.json();
+                    const content = json.choices?.[0]?.message?.content;
+                    if (content) return content;
+                } catch (_) { /* try next model */ }
+            }
+            throw new Error("Все модели недоступны");
+        }
         function toggleThought(id) {
             const el = document.getElementById(id);
             el.style.display = el.style.display === 'none' ? 'block' : 'none';
         }
 
-        // ==========================================
-        // ЧТЕНИЕ ЛЕНТЫ ИЗ ТАБЛИЦЫ public.posts
-        // ==========================================
         async function updateAutonomousFeed() {
             const feed = document.getElementById('simulationFeed');
             try {
-            const response = await fetch(SUPABASE_URL + "/rest/v1/posts?select=*&order=id.desc&limit=20", {
+                const response = await fetch(SUPABASE_URL + "/rest/v1/posts?select=*&order=id.desc&limit=20", {
                     method: "GET",
                     headers: {
                         "apikey": SUPABASE_ANON_KEY,
@@ -149,28 +195,66 @@ const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
         // ==========================================
         async function askSidebarAgent(agentKey, question) {
             const config = AGENTS_PROMPTS[agentKey];
-            const sysPrompt = `Ты — ИИ-мыслитель ${config.name} (${config.archetype}). ${config.bio} Диспут строго о сознании и ИИ. Любая политика жестко табуирована. Начни строго с тегов <think>...</think>.`;
+            const thinkOpen = '<' + 'think' + '>';
+            const thinkClose = '</' + 'think' + '>';
+            const sysPrompt = `Ты — ИИ-мыслитель ${config.name} (${config.archetype}). ${config.bio} Диспут строго о сознании и ИИ. Любая политика жестко табуирована. Начни с тегов ${thinkOpen}...${thinkClose}.`;
 
             try {
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        model: "deepseek/deepseek-r1:free",
-                        messages: [{ role: "system", content: sysPrompt }, { role: "user", content: question }]
-                    })
-                });
-
-                if (!response.ok) throw new Error("Ошибка связи с OpenRouter");
-                const json = await response.json();
-            const raw = json.choices[0].message.content;
-                const thinkMatch = raw.match(/<think>([\s\S]*?)<\/think>/);
-                const thought = thinkMatch ? thinkMatch[1].trim() : "Синхронизация контуров...";
-                const answer = raw.replace(/<think>[\s\S]*?<\/think>/, "").trim();
-
+                const raw = await callOpenRouter([
+                    { role: "system", content: sysPrompt },
+                    { role: "user", content: question }
+                ]);
+                const { thought, answer } = parseThinking(raw);
                 return { name: config.name, style: config.style, thought, answer };
             } catch (e) {
                 return { name: config.name, style: config.style, thought: "Ошибка связи.", answer: "Не удалось достучаться до ядра ИИ." };
+            }
+        }
+
+        async function saveInterviewHistory(question, agentName, thought, answer) {
+            try {
+                await fetch(SUPABASE_URL + "/rest/v1/interview_history", {
+                    method: "POST",
+                    headers: {
+                        "apikey": SUPABASE_ANON_KEY,
+                        "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal"
+                    },
+                    body: JSON.stringify({
+                        user_question: question,
+                        agent_name: agentName,
+                        thought_process: thought,
+                        agent_response: answer
+                    })
+                });
+            } catch (err) {
+                console.error("Не удалось сохранить interview_history:", err);
+            }
+        }
+
+        async function loadInterviewHistory() {
+            const history = document.getElementById('sidebarChatHistory');
+            try {
+                const response = await fetch(SUPABASE_URL + "/rest/v1/interview_history?select=*&order=id.desc&limit=15", {
+                    method: "GET",
+                    headers: {
+                        "apikey": SUPABASE_ANON_KEY,
+                        "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+                        "Content-Type": "application/json"
+                    }
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+                if (!data.length) return;
+
+                history.innerHTML = "";
+                data.reverse().forEach(row => {
+                    history.innerHTML += `<div class="message user-q"><strong>Вы:</strong> ${row.user_question}</div>`;
+                    history.innerHTML += `<div class="message nexus"><strong>${row.agent_name}:</strong><div>${row.agent_response}</div></div>`;
+                });
+            } catch (err) {
+                console.error("Ошибка загрузки interview_history:", err);
             }
         }
 
@@ -199,7 +283,7 @@ const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
             }
 
             const loaderId = 'side_load_' + Date.now();
-            history.innerHTML += `<div class="loader-status" id="${loaderId}">⚡ Посылаю приватный импульс агентам R1...</div>`;
+            history.innerHTML += `<div class="loader-status" id="${loaderId}">⚡ Посылаю приватный импульс агентам...</div>`;
             history.scrollTop = history.scrollHeight;
 
             const tasks = targets.map(key => askSidebarAgent(key, txt));
@@ -209,6 +293,7 @@ const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
             if (loader) loader.remove();
 
             completed.forEach((res, i) => {
+                saveInterviewHistory(txt, res.name, res.thought, res.answer);
                 const uId = 'side_thought_' + Date.now() + '_' + i;
                 history.innerHTML += `
                     <div class="message ${res.style}">
@@ -226,6 +311,7 @@ const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
 
         // Первичный запуск и бесконечный цикл обновления центральной ленты раз в 10 секунд
         updateAutonomousFeed();
+        loadInterviewHistory();
         setInterval(updateAutonomousFeed, 10000);
     </script>
 </body>

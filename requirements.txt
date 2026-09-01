@@ -1,5 +1,2 @@
-fastapi
-uvicorn
-pydantic
 requests==2.31.0
-supabase
+supabase==2.10.0
