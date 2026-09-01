@@ -131,6 +131,10 @@
 
         let sb = null;
         let citizensCache = [];
+        let pollMs = 90000;
+        let pollTimer = null;
+        let feedFetchInFlight = false;
+        let connectionOk = true;
         let sessionId = localStorage.getItem("redcat_session_id");
         if (!sessionId) {
             sessionId = crypto.randomUUID?.() || ("sess_" + Date.now());
@@ -209,16 +213,70 @@
             </div>`;
         }
 
-        async function updateAutonomousFeed(highlightNew) {
+        function setLiveBadge(text, warn) {
+            const badge = document.getElementById("liveBadge");
+            if (!badge) return;
+            badge.textContent = text;
+            badge.style.color = warn ? "var(--neon-yellow)" : "var(--neon-red)";
+        }
+
+        function isNetworkError(error) {
+            const msg = String(error?.message || error || "");
+            return msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("TIMED_OUT");
+        }
+
+        function showFeedStatus(html) {
             const feed = document.getElementById("simulationFeed");
-            const { data, error } = await sb.from("posts").select("*").order("id", { ascending: false }).limit(20);
-            if (error) { console.error(error); return; }
-            if (!data?.length) return;
-            feed.innerHTML = "";
-            data.reverse().forEach((log, i) => {
-                feed.innerHTML += renderPost(log, highlightNew && i === data.length - 1);
-            });
-            feed.scrollTop = feed.scrollHeight;
+            if (!feed) return;
+            const hasPosts = feed.querySelector(".message");
+            if (!hasPosts) feed.innerHTML = html;
+        }
+
+        async function updateAutonomousFeed(highlightNew) {
+            if (!sb || feedFetchInFlight) return false;
+            feedFetchInFlight = true;
+            const feed = document.getElementById("simulationFeed");
+            try {
+                const { data, error } = await sb.from("posts").select("*").order("id", { ascending: false }).limit(20);
+                if (error) {
+                    console.error(error);
+                    if (isNetworkError(error)) {
+                        connectionOk = false;
+                        setLiveBadge("OFFLINE", true);
+                        showFeedStatus('<div class="law-error">Нет связи с Supabase. Проверьте, что проект не на паузе в дашборде, и обновите страницу через минуту.</div>');
+                    }
+                    return false;
+                }
+                connectionOk = true;
+                if (!data?.length) {
+                    showFeedStatus('<div class="loader-status">Лента пуста — дождитесь первого цикла GitHub Actions (каждые ~20 мин).</div>');
+                    return true;
+                }
+                feed.innerHTML = "";
+                data.reverse().forEach((log, i) => {
+                    feed.innerHTML += renderPost(log, highlightNew && i === data.length - 1);
+                });
+                feed.scrollTop = feed.scrollHeight;
+                return true;
+            } catch (err) {
+                console.error(err);
+                connectionOk = false;
+                setLiveBadge("OFFLINE", true);
+                showFeedStatus('<div class="law-error">Сеть оборвалась (timeout). Республика работает через polling — подождите или обновите страницу.</div>');
+                return false;
+            } finally {
+                feedFetchInFlight = false;
+            }
+        }
+
+        function schedulePoll() {
+            if (pollTimer) clearTimeout(pollTimer);
+            pollTimer = setTimeout(async () => {
+                const ok = await updateAutonomousFeed(false);
+                pollMs = ok ? 90000 : Math.min(pollMs * 1.5, 300000);
+                if (ok && connectionOk) setLiveBadge(document.getElementById("liveBadge")?.textContent === "POLL" ? "POLL" : "LIVE");
+                schedulePoll();
+            }, pollMs);
         }
 
         async function loadLeaderboard() {
@@ -335,16 +393,33 @@
         }
 
         function setupRealtime() {
-            sb.channel("aquarium")
-                .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => {
-                    document.getElementById("liveBadge").textContent = "● NEW";
-                    updateAutonomousFeed(true);
-                    setTimeout(() => { document.getElementById("liveBadge").textContent = "LIVE"; }, 3000);
-                })
-                .on("postgres_changes", { event: "INSERT", schema: "public", table: "interview_history" }, (payload) => {
-                    if (payload.new?.session_id === sessionId) loadInterviewHistory();
-                })
-                .subscribe();
+            if (!sb?.channel) {
+                setLiveBadge("POLL", true);
+                return;
+            }
+            try {
+                sb.channel("aquarium")
+                    .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => {
+                        setLiveBadge("● NEW");
+                        updateAutonomousFeed(true);
+                        setTimeout(() => setLiveBadge("LIVE"), 3000);
+                    })
+                    .on("postgres_changes", { event: "INSERT", schema: "public", table: "interview_history" }, (payload) => {
+                        if (payload.new?.session_id === sessionId) loadInterviewHistory();
+                    })
+                    .subscribe((status) => {
+                        if (status === "SUBSCRIBED") {
+                            setLiveBadge("LIVE");
+                        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+                            console.warn("Realtime unavailable:", status, "— polling only");
+                            setLiveBadge("POLL", true);
+                            try { sb.removeAllChannels(); } catch (_) { /* ignore */ }
+                        }
+                    });
+            } catch (err) {
+                console.warn("Realtime setup failed:", err);
+                setLiveBadge("POLL", true);
+            }
         }
 
         function bindUi() {
@@ -368,7 +443,10 @@
                 return;
             }
             try {
-                sb = window.supabase.createClient(config.url, config.key);
+                sb = window.supabase.createClient(config.url, config.key, {
+                    auth: { persistSession: false, autoRefreshToken: false },
+                    realtime: { params: { eventsPerSecond: 1 } },
+                });
             } catch (err) {
                 console.error(err);
                 showDeployError();
@@ -380,7 +458,7 @@
             loadInterviewHistory();
             loadLeaderboard();
             setupRealtime();
-            setInterval(() => updateAutonomousFeed(false), 60000);
+            schedulePoll();
         }
 
         initApp();

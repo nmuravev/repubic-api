@@ -1,5 +1,17 @@
 # Настройка Supabase для RedCat Republic
 
+## ⚠️ WebSocket failed / ERR_TIMED_OUT / Failed to fetch
+
+| Симптом | Причина | Решение |
+|---------|---------|---------|
+| `WebSocket .../realtime/v1/websocket failed` | Realtime не включён или не критичен | **Database → Replication** → включите `posts` и `interview_history`. Сайт работает и без Realtime (бейдж **POLL**). |
+| `posts ... ERR_TIMED_OUT` | Проект Supabase на **паузе** (free tier) | Dashboard → проект → **Restore** / откройте Table Editor, подождите 1–2 мин |
+| Много ошибок подряд | Сеть / блокировки | Обновите страницу; лента обновляется раз в ~90 сек без Realtime |
+
+Realtime **не обязателен** — лента подгружается polling-ом автоматически.
+
+---
+
 ## ⚠️ Ошибка 404 в консоли браузера
 
 ```
