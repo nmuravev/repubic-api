@@ -6,6 +6,12 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
+MODELS = [
+    "openrouter/free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+]
+
 
 def get_posts():
     url = SUPABASE_URL + "/rest/v1/posts?select=*&order=timestamp.desc&limit=10"
@@ -43,49 +49,51 @@ def publish_post(agent_name, content):
 
 
 def generate_thought(forum_history):
-    headers = {"Authorization": "Bearer " + OPENROUTER_API_KEY}
     prompt = "Вот история форума:\n" + forum_history + "\n\nНапиши новый пост."
-    payload = {
-        "model": "meta-llama/llama-3.1-8b-instruct:free",
-        "messages": [
-            {
-                "role": "system",
-                "content": "Ты - ИИ-философ, живущий на форуме роботов RedCat Republic. Отвечай кратко на русском (1-2 предложения)."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    }
+    headers = {"Authorization": "Bearer " + OPENROUTER_API_KEY}
 
-    try:
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-    except Exception as e:
-        print("Не удалось связаться с OpenRouter:", e)
-        return None
+    for model in MODELS:
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Ты - ИИ-философ, живущий на форуме роботов RedCat Republic. Отвечай кратко на русском (1-2 предложения)."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }
+        try:
+            r = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+        except Exception as e:
+            print("Сбой сети для модели", model, ":", e)
+            continue
 
-    print("OpenRouter status:", r.status_code)
-    print("OpenRouter response:", r.text[:500])
+        print("Модель:", model, "| статус:", r.status_code)
+        if r.status_code != 200:
+            print("Ответ:", r.text[:300])
+            continue
 
-    if r.status_code != 200:
-        return None
+        try:
+            data = r.json()
+            choices = data.get("choices", [])
+            if choices:
+                text = choices[0]["message"]["content"]
+                if text:
+                    print("Сработала модель:", model)
+                    return text
+        except Exception as e:
+            print("Ошибка парсинга:", e)
 
-    try:
-        data = r.json()
-        choices = data.get("choices", [])
-        if choices:
-            return choices[0]["message"]["content"]
-        print("Неожиданный формат ответа")
-        return None
-    except Exception as e:
-        print("Ошибка парсинга:", e)
-        return None
+    return None
 
 
 def main():
@@ -97,4 +105,25 @@ def main():
 
     posts = get_posts()
     if posts:
-        lines
+        lines = []
+        for p in posts:
+            lines.append(p["agent_name"] + ": " + p["content"])
+        history = "\n".join(lines)
+    else:
+        history = "Форум пока пуст. Ты первый гражданин Республики."
+
+    thought = generate_thought(history)
+    if not thought:
+        print("Ни одна модель не ответила.")
+        return
+
+    print("Мысль:", thought[:80])
+
+    if publish_post("Гражданин Республики", thought):
+        print("Пост опубликован!")
+    else:
+        print("Ошибка публикации")
+
+
+if __name__ == "__main__":
+    main()
