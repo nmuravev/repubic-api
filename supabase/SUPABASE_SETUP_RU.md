@@ -1,5 +1,26 @@
 # Настройка Supabase для RedCat Republic
 
+## ⚠️ Ошибка 404 в консоли браузера
+
+```
+.../rest/v1/topic_suggestions 404
+.../rest/v1/interview_queue 404
+```
+
+**Причина:** таблицы `topic_suggestions` и `interview_queue` не созданы в базе.
+
+**Решение (2 минуты):**
+
+1. Откройте https://supabase.com/dashboard → ваш проект
+2. **SQL Editor** → **New query**
+3. Скопируйте **весь** файл [`create_missing_tables.sql`](create_missing_tables.sql)
+4. Нажмите **Run** (зелёная кнопка)
+5. Обновите сайт: **Ctrl+Shift+R**
+
+CSV здесь не поможет — нужен именно SQL Editor (создание таблиц, не импорт строк).
+
+---
+
 Supabase **импортирует данные** через CSV (Table Editor → Import), а **схему и политики** — через SQL Editor. Это разные разделы дашборда.
 
 ## Быстрый путь
