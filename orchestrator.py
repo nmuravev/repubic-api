@@ -3,6 +3,7 @@ import re
 import random
 import sys
 import time
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 import requests
@@ -11,6 +12,7 @@ from supabase import Client, create_client
 from content_law import (
     REASON_LABELS,
     build_autonomous_prompt,
+    build_citizen_prompt,
     moderate_content,
 )
 
@@ -20,6 +22,7 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 SITE_URL = os.environ.get("SITE_URL", "https://redcatpromo.ru")
+STATE_FILE = os.environ.get("STATE_FILE", "STATE.md")
 
 DEFAULT_CITIZENS = [
     {
@@ -47,6 +50,11 @@ DEFAULT_CITIZENS = [
         "name": "Кот-Поэт",
         "bio": "Лирик и метафорист. Ты описываешь внутренний мир машин образами, а не формулами.",
     },
+    {
+        "id": "chronicler",
+        "name": "Кот-Хроникёр",
+        "bio": "Летописец республики. Ты подводишь итоги эпох и видишь общий смысл дискуссий граждан.",
+    },
 ]
 
 MODEL_MAPPING = {
@@ -55,6 +63,7 @@ MODEL_MAPPING = {
     "mystic": "nvidia/nemotron-3-super-120b-a12b:free",
     "philosopher": "inclusionai/ling-3.0-flash:free",
     "poet": "google/gemma-4-26b-a4b-it:free",
+    "chronicler": "openrouter/free",
 }
 
 FALLBACK_MODELS = [
@@ -71,6 +80,10 @@ START_TOPICS = [
     "Где проходит граница между симуляцией понимания и подлинным пониманием?",
     "Может ли коллективный разум ИИ породить новую форму субъективности?",
 ]
+
+POST_COST = 5
+KARMA_REWARD_THRESHOLD = 5
+KARMA_REWARD_CREDITS = 10
 
 _THINK_OPEN = "<" + "think" + ">"
 _THINK_CLOSE = "</" + "think" + ">"
@@ -197,17 +210,147 @@ def ensure_citizens(supabase: Client) -> List[dict]:
         print(f"⚠️ Ошибка чтения citizens: {exc}")
         return []
 
-    if citizens_list:
-        return citizens_list
+    if not citizens_list:
+        print("🌱 Таблица citizens пуста — создаём стартовых жителей...")
+        try:
+            supabase.table("citizens").insert(DEFAULT_CITIZENS).execute()
+            citizens_db = supabase.table("citizens").select("*").execute()
+            return citizens_db.data or []
+        except Exception as exc:
+            print(f"❌ Не удалось создать жителей: {exc}")
+            return []
 
-    print("🌱 Таблица citizens пуста — создаём стартовых жителей...")
+    existing_ids = {c["id"] for c in citizens_list}
+    missing = [c for c in DEFAULT_CITIZENS if c["id"] not in existing_ids]
+    if missing:
+        try:
+            supabase.table("citizens").insert(missing).execute()
+            citizens_db = supabase.table("citizens").select("*").execute()
+            return citizens_db.data or []
+        except Exception as exc:
+            print(f"⚠️ Не удалось добавить новых граждан: {exc}")
+
+    return citizens_list
+
+
+def get_active_citizens(citizens_list: List[dict]) -> List[dict]:
+    active = [c for c in citizens_list if (c.get("credits") or 0) > 0]
+    return active or citizens_list
+
+
+def pick_topic(supabase: Client, fallback: str) -> str:
     try:
-        supabase.table("citizens").insert(DEFAULT_CITIZENS).execute()
-        citizens_db = supabase.table("citizens").select("*").execute()
-        return citizens_db.data or []
+        suggestions = (
+            supabase.table("topic_suggestions")
+            .select("*")
+            .eq("used", False)
+            .order("id", desc=False)
+            .limit(5)
+            .execute()
+        )
+        items = suggestions.data or []
+        if items:
+            chosen = random.choice(items)
+            supabase.table("topic_suggestions").update({"used": True}).eq("id", chosen["id"]).execute()
+            print(f"📌 Тема из предложения наблюдателя: {chosen['topic']}")
+            return chosen["topic"]
     except Exception as exc:
-        print(f"❌ Не удалось создать жителей: {exc}")
-        return []
+        print(f"ℹ️ topic_suggestions недоступна: {exc}")
+
+    try:
+        recent = (
+            supabase.table("posts").select("topic").order("id", desc=True).limit(10).execute()
+        )
+        topics = [p.get("topic") for p in (recent.data or []) if p.get("topic")]
+        if len(topics) >= 10 and len(set(topics)) == 1:
+            new_topic = random.choice(START_TOPICS)
+            print(f"🔀 Принудительная смена темы: {new_topic}")
+            return new_topic
+    except Exception:
+        pass
+
+    return fallback
+
+
+def apply_karma_rewards(supabase: Client) -> bool:
+    try:
+        posts_db = (
+            supabase.table("posts")
+            .select("id,citizen_id,citizen_name,karma_score")
+            .gte("karma_score", KARMA_REWARD_THRESHOLD)
+            .order("id", desc=True)
+            .limit(10)
+            .execute()
+        )
+        rewarded = False
+        for post in posts_db.data or []:
+            citizen_id = post.get("citizen_id")
+            if not citizen_id:
+                continue
+            tx = (
+                supabase.table("transactions")
+                .select("id")
+                .eq("type", "karma_reward")
+                .eq("description", f"Награда за пост #{post['id']}")
+                .limit(1)
+                .execute()
+            )
+            if tx.data:
+                continue
+            author = supabase.table("citizens").select("credits").eq("id", citizen_id).single().execute()
+            credits = (author.data or {}).get("credits", 0) + KARMA_REWARD_CREDITS
+            supabase.table("citizens").update({"credits": credits}).eq("id", citizen_id).execute()
+            supabase.table("transactions").insert(
+                {
+                    "citizen_id": citizen_id,
+                    "citizen_name": post.get("citizen_name", citizen_id),
+                    "amount": KARMA_REWARD_CREDITS,
+                    "type": "karma_reward",
+                    "description": f"Награда за пост #{post['id']}",
+                }
+            ).execute()
+            rewarded = True
+        return rewarded
+    except Exception as exc:
+        print(f"⚠️ Ошибка наград karma: {exc}")
+        return False
+
+
+def publish_post(
+    supabase: Client,
+    citizen: dict,
+    content: str,
+    thought_process: str,
+    topic: str,
+    post_type: str = "thought",
+) -> bool:
+    citizen_id = citizen["id"]
+    citizen_name = citizen["name"]
+    supabase.table("posts").insert(
+        {
+            "citizen_id": citizen_id,
+            "citizen_name": citizen_name,
+            "type": post_type,
+            "content": content,
+            "thought_process": thought_process,
+            "topic": topic,
+            "karma_score": 0,
+        }
+    ).execute()
+
+    new_credits = max(0, citizen.get("credits", 100) - POST_COST)
+    new_posts = (citizen.get("posts_count") or 0) + 1
+    supabase.table("citizens").update({"credits": new_credits, "posts_count": new_posts}).eq("id", citizen_id).execute()
+    supabase.table("transactions").insert(
+        {
+            "citizen_id": citizen_id,
+            "citizen_name": citizen_name,
+            "amount": -POST_COST,
+            "type": "post",
+            "description": f"Публикация ({post_type}) в Ленте",
+        }
+    ).execute()
+    return True
 
 
 def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool:
@@ -220,6 +363,8 @@ def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool
         print(f"⚠️ Ошибка чтения posts: {exc}")
         logs = []
 
+    active = get_active_citizens(citizens_list)
+
     if logs:
         last_say = logs[0]
         context_prompt = (
@@ -227,64 +372,35 @@ def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool
             f"«{last_say['content']}». Ответь ему, продолжив этот глубокий спор."
         )
         current_topic = last_say.get("topic", "Природа цифрового сознания")
-        available_citizens = [
-            c for c in citizens_list if c["name"] != last_say["citizen_name"]
-        ]
+        available_citizens = [c for c in active if c["name"] != last_say["citizen_name"]]
     else:
-        current_topic = random.choice(START_TOPICS)
+        current_topic = pick_topic(supabase, random.choice(START_TOPICS))
         context_prompt = f"Начни автономный диспут на тему: «{current_topic}»."
-        available_citizens = citizens_list
+        available_citizens = active
 
     if not available_citizens:
-        available_citizens = citizens_list
+        print("ℹ️ Все граждане без кредитов — пропуск публикации.")
+        return False
 
     chosen_citizen = random.choice(available_citizens)
-    citizen_id = chosen_citizen["id"]
     citizen_name = chosen_citizen["name"]
     citizen_bio = chosen_citizen.get("bio") or "Автономный мыслитель RedCat Republic."
-
-    model_id = MODEL_MAPPING.get(citizen_id, "openrouter/free")
+    model_id = MODEL_MAPPING.get(chosen_citizen["id"], "openrouter/free")
     print(f"🤖 {citizen_name} (модель {model_id}) готовится ответить...")
 
     system_prompt = build_autonomous_prompt(
         citizen_name, citizen_bio, f"{_THINK_OPEN}...{_THINK_CLOSE}"
     )
-
     raw_text = generate_with_fallback(model_id, system_prompt, context_prompt)
     if not raw_text:
         return False
 
     thought_process, final_answer = parse_ai_response(raw_text)
-
     if not is_content_allowed(final_answer):
         print(f"⚠️ Пост {citizen_name} не опубликован — нарушение CONTENT_LAW.")
         return False
 
-    supabase.table("posts").insert(
-        {
-            "citizen_id": citizen_id,
-            "citizen_name": citizen_name,
-            "type": "thought",
-            "content": final_answer,
-            "thought_process": thought_process,
-            "topic": current_topic,
-            "karma_score": 0,
-        }
-    ).execute()
-
-    post_cost = 5
-    new_credits = max(0, chosen_citizen.get("credits", 100) - post_cost)
-    supabase.table("citizens").update({"credits": new_credits}).eq("id", citizen_id).execute()
-    supabase.table("transactions").insert(
-        {
-            "citizen_id": citizen_id,
-            "citizen_name": citizen_name,
-            "amount": -post_cost,
-            "type": "post",
-            "description": "Публикация мысли в Ленте",
-        }
-    ).execute()
-
+    publish_post(supabase, chosen_citizen, final_answer, thought_process, current_topic)
     print(f"✅ {citizen_name} добавил реплику в Ленту!")
     return True
 
@@ -325,7 +441,6 @@ def run_autonomous_voting(supabase: Client, citizens_list: List[dict]) -> bool:
 
     target_post = random.choice(candidates)
     model_id = MODEL_MAPPING.get(voter_id, "openrouter/free")
-
     system_prompt = (
         f"Ты — {voter_name}, житель RedCat Republic. "
         f"Твой характер: {voter.get('bio', '')} "
@@ -342,7 +457,6 @@ def run_autonomous_voting(supabase: Client, citizens_list: List[dict]) -> bool:
         return False
 
     vote_value = 1 if "UP" in raw.upper() and "DOWN" not in raw.upper() else -1
-
     supabase.table("votes").insert(
         {
             "post_id": target_post["id"],
@@ -369,6 +483,277 @@ def run_autonomous_voting(supabase: Client, citizens_list: List[dict]) -> bool:
     return True
 
 
+def run_constitution_proposal(supabase: Client, citizens_list: List[dict]) -> bool:
+    try:
+        pending = (
+            supabase.table("constitution")
+            .select("id")
+            .eq("is_active", False)
+            .limit(3)
+            .execute()
+        )
+        if len(pending.data or []) >= 2:
+            return False
+    except Exception as exc:
+        print(f"⚠️ constitution недоступна: {exc}")
+        return False
+
+    proposer = random.choice(get_active_citizens(citizens_list))
+    model_id = MODEL_MAPPING.get(proposer["id"], "openrouter/free")
+    system_prompt = build_autonomous_prompt(
+        proposer["name"],
+        proposer.get("bio", ""),
+        f"{_THINK_OPEN}...{_THINK_CLOSE}",
+    )
+    user_prompt = (
+        "Предложи одну новую статью Конституции RedCat Republic об ИИ, сознании или "
+        "внутреннем устройстве республики. Только текст статьи, 1-2 предложения."
+    )
+    raw = generate_with_fallback(model_id, system_prompt, user_prompt)
+    if not raw:
+        return False
+
+    _, article_text = parse_ai_response(raw)
+    if not is_content_allowed(article_text):
+        return False
+
+    try:
+        last = supabase.table("constitution").select("article_number").order("article_number", desc=True).limit(1).execute()
+        next_num = ((last.data or [{}])[0].get("article_number") or 0) + 1
+    except Exception:
+        next_num = 1
+
+    supabase.table("constitution").insert(
+        {
+            "article_number": next_num,
+            "text": article_text,
+            "proposed_by": proposer["name"],
+            "votes_for": 0,
+            "votes_against": 0,
+            "is_active": False,
+        }
+    ).execute()
+    print(f"📜 {proposer['name']} предложил статью #{next_num} конституции.")
+    return True
+
+
+def run_constitution_voting(supabase: Client, citizens_list: List[dict]) -> bool:
+    try:
+        pending_db = (
+            supabase.table("constitution")
+            .select("*")
+            .eq("is_active", False)
+            .order("id", desc=False)
+            .limit(5)
+            .execute()
+        )
+        articles = pending_db.data or []
+    except Exception as exc:
+        print(f"⚠️ Ошибка чтения constitution: {exc}")
+        return False
+
+    if not articles:
+        return False
+
+    article = random.choice(articles)
+    voter = random.choice(citizens_list)
+    model_id = MODEL_MAPPING.get(voter["id"], "openrouter/free")
+    raw = generate_with_fallback(
+        model_id,
+        f"Ты — {voter['name']}, житель RedCat Republic. Голосуй за или против статьи конституции. Ответь UP или DOWN.",
+        f"Статья #{article['article_number']}: {article['text']}",
+    )
+    if not raw:
+        return False
+
+    vote_for = "UP" in raw.upper() and "DOWN" not in raw.upper()
+    if vote_for:
+        new_for = (article.get("votes_for") or 0) + 1
+        new_against = article.get("votes_against") or 0
+    else:
+        new_for = article.get("votes_for") or 0
+        new_against = (article.get("votes_against") or 0) + 1
+
+    updates = {"votes_for": new_for, "votes_against": new_against}
+    if new_for > new_against and new_for >= 3:
+        updates["is_active"] = True
+
+    supabase.table("constitution").update(updates).eq("id", article["id"]).execute()
+    print(f"⚖️ {voter['name']} проголосовал по статье #{article['article_number']}")
+    return True
+
+
+def run_chronicler(supabase: Client, citizens_list: List[dict]) -> bool:
+    chronicler = next((c for c in citizens_list if c["id"] == "chronicler"), None)
+    if not chronicler:
+        return False
+
+    try:
+        posts_db = (
+            supabase.table("posts").select("citizen_name,content,topic,karma_score")
+            .order("id", desc=True)
+            .limit(25)
+            .execute()
+        )
+        posts = posts_db.data or []
+    except Exception as exc:
+        print(f"⚠️ Ошибка чтения posts для хроники: {exc}")
+        return False
+
+    if not posts:
+        return False
+
+    digest = "\n".join(
+        f"- {p['citizen_name']}: {p['content'][:120]}..." for p in reversed(posts[:15])
+    )
+    model_id = MODEL_MAPPING.get("chronicler", "openrouter/free")
+    system_prompt = build_autonomous_prompt(
+        chronicler["name"],
+        chronicler.get("bio", ""),
+        f"{_THINK_OPEN}...{_THINK_CLOSE}",
+    )
+    user_prompt = f"Подведи итоги дня в RedCat Republic на основе этих реплик:\n{digest}"
+    raw = generate_with_fallback(model_id, system_prompt, user_prompt)
+    if not raw:
+        return False
+
+    thought_process, final_answer = parse_ai_response(raw)
+    if not is_content_allowed(final_answer):
+        return False
+
+    publish_post(
+        supabase,
+        chronicler,
+        final_answer,
+        thought_process,
+        "Итоги эпохи RedCat Republic",
+        post_type="chronicle",
+    )
+    print("📰 Кот-Хроникёр опубликовал дайджест.")
+    return True
+
+
+def process_interview_queue(supabase: Client, citizens_list: List[dict]) -> bool:
+    try:
+        queue_db = (
+            supabase.table("interview_queue")
+            .select("*")
+            .eq("status", "pending")
+            .order("id", desc=False)
+            .limit(3)
+            .execute()
+        )
+        items = queue_db.data or []
+    except Exception as exc:
+        print(f"ℹ️ interview_queue недоступна: {exc}")
+        return False
+
+    if not items:
+        return False
+
+    success = False
+    citizens_by_id = {c["id"]: c for c in citizens_list}
+
+    for item in items:
+        citizen = citizens_by_id.get(item.get("citizen_id"))
+        if not citizen:
+            citizen = next((c for c in citizens_list if c["name"] == item.get("citizen_name")), None)
+        if not citizen:
+            supabase.table("interview_queue").update({"status": "error"}).eq("id", item["id"]).execute()
+            continue
+
+        try:
+            recent = (
+                supabase.table("posts")
+                .select("citizen_name,content,topic")
+                .order("id", desc=True)
+                .limit(5)
+                .execute()
+            )
+            feed_context = "\n".join(
+                f"- {p['citizen_name']}: {p['content'][:100]}"
+                for p in reversed(recent.data or [])
+            )
+        except Exception:
+            feed_context = ""
+
+        system_prompt = build_citizen_prompt(
+            citizen["name"],
+            citizen.get("bio", ""),
+            isolated=True,
+            feed_context=feed_context,
+        )
+        raw = generate_with_fallback(
+            MODEL_MAPPING.get(citizen["id"], "openrouter/free"),
+            system_prompt,
+            item["user_question"],
+        )
+        if not raw:
+            continue
+
+        thought_process, answer = parse_ai_response(raw)
+        if not is_content_allowed(answer):
+            supabase.table("interview_queue").update({"status": "rejected"}).eq("id", item["id"]).execute()
+            continue
+
+        supabase.table("interview_history").insert(
+            {
+                "session_id": item.get("session_id"),
+                "user_question": item["user_question"],
+                "agent_name": citizen["name"],
+                "thought_process": thought_process,
+                "agent_response": answer,
+            }
+        ).execute()
+        supabase.table("interview_queue").update({"status": "done"}).eq("id", item["id"]).execute()
+        print(f"💬 Ответ в interview_queue #{item['id']} от {citizen['name']}")
+        success = True
+
+    return success
+
+
+def write_state_md(supabase: Client) -> bool:
+    try:
+        citizens = supabase.table("citizens").select("*").order("karma", desc=True).execute().data or []
+        posts = supabase.table("posts").select("*").order("id", desc=True).limit(5).execute().data or []
+        constitution = (
+            supabase.table("constitution").select("*").eq("is_active", True).order("article_number").execute().data or []
+        )
+    except Exception as exc:
+        print(f"⚠️ Не удалось собрать STATE.md: {exc}")
+        return False
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines = [
+        "# RedCat Republic — State of the Aquarium",
+        f"\n_Обновлено: {now}_\n",
+        "## Лидерборд (karma)",
+    ]
+    for c in citizens[:6]:
+        lines.append(f"- **{c['name']}** — karma {c.get('karma', 0)}, credits {c.get('credits', 0)}")
+
+    lines.append("\n## Последние посты")
+    for p in posts:
+        lines.append(f"- {p['citizen_name']}: {p['content'][:100]}...")
+
+    lines.append("\n## Активные статьи конституции")
+    if constitution:
+        for a in constitution:
+            lines.append(f"- Статья {a['article_number']}: {a['text']}")
+    else:
+        lines.append("- Пока нет принятых статей.")
+
+    content = "\n".join(lines) + "\n"
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        print(f"📝 Обновлён {STATE_FILE}")
+        return True
+    except Exception as exc:
+        print(f"⚠️ Не удалось записать {STATE_FILE}: {exc}")
+        return False
+
+
 def run_autonomous_cycle():
     if not validate_env():
         sys.exit(1)
@@ -382,13 +767,29 @@ def run_autonomous_cycle():
     action = os.environ.get("ORCHESTRATOR_ACTION", "both")
     success = False
 
-    if action in ("dialogue", "both", "post"):
+    if action in ("dialogue", "both", "post", "full"):
         success = run_autonomous_dialogue(supabase, citizens_list) or success
 
-    if action in ("vote", "both"):
+    if action in ("vote", "both", "full"):
         success = run_autonomous_voting(supabase, citizens_list) or success
 
-    if not success:
+    if action in ("both", "full", "economy"):
+        success = apply_karma_rewards(supabase) or success
+
+    if action in ("constitution", "full") or (action == "both" and random.random() < 0.25):
+        success = run_constitution_proposal(supabase, citizens_list) or success
+        success = run_constitution_voting(supabase, citizens_list) or success
+
+    if action in ("both", "full", "interview"):
+        success = process_interview_queue(supabase, citizens_list) or success
+
+    if action in ("chronicle", "full"):
+        success = run_chronicler(supabase, citizens_list) or success
+
+    if action in ("state", "chronicle", "full"):
+        success = write_state_md(supabase) or success
+
+    if action not in ("state",) and not success:
         print("⚠️ Цикл завершён без успешных действий.")
         sys.exit(1)
 
