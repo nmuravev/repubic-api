@@ -1,21 +1,25 @@
-name: RedCat Autonomous Republic
+name: Deploy RedCat Pages
 
 on:
-  schedule:
-    - cron: '*/20 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'CNAME'
+      - 'build_site.py'
+      - '.github/workflows/deploy-pages.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: redcat-autonomous
-  cancel-in-progress: false
+  group: redcat-pages-deploy
+  cancel-in-progress: true
 
 jobs:
-  orchestrate-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -32,15 +36,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python validate_supabase.py
-
-      - name: Run autonomous orchestrator (post + vote)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          SITE_URL: https://redcatpromo.ru
-          ORCHESTRATOR_ACTION: both
-        run: python orchestrator.py
 
       - name: Build static site with injected secrets
         env:
