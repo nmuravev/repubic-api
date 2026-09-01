@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 import requests
-from supabase import Client
 
 from content_law import (
     REASON_LABELS,
@@ -15,7 +14,7 @@ from content_law import (
     build_citizen_prompt,
     moderate_content,
 )
-from supabase_client import create_supabase_client
+from supabase_client import SupabaseRestClient, create_supabase_client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY")
@@ -116,7 +115,7 @@ def validate_env() -> bool:
     return True
 
 
-def get_supabase() -> Client:
+def get_supabase() -> SupabaseRestClient:
     return create_supabase_client(SUPABASE_URL, SUPABASE_KEY)
 
 

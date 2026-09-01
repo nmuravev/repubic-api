@@ -1,14 +1,11 @@
-"""Supabase client that works with both JWT anon keys and sb_publishable_* keys."""
+"""Supabase client via PostgREST — works with JWT anon keys and sb_publishable_* keys."""
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Any, Optional
 
 from postgrest import SyncPostgrestClient
-
-JWT_PATTERN = re.compile(r"^[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*$")
 
 
 class _TableProxy:
@@ -76,24 +73,9 @@ def normalize_supabase_credentials(url: Optional[str], key: Optional[str]) -> tu
 
 
 def create_supabase_client(url: Optional[str], key: Optional[str]) -> SupabaseRestClient:
+    """Create Supabase client. Always uses PostgREST (no supabase-py create_client)."""
     clean_url, clean_key = normalize_supabase_credentials(url, key)
-
-    if JWT_PATTERN.match(clean_key):
-        try:
-            from supabase import create_client
-
-            return create_client(clean_url, clean_key)  # type: ignore[return-value]
-        except Exception as exc:
-            print(f"ℹ️ JWT-ключ не прошёл create_client ({exc}), используем REST-адаптер")
-
-    if clean_key.startswith("sb_"):
-        print("ℹ️ Используется publishable key через REST-адаптер")
-        return SupabaseRestClient(clean_url, clean_key)
-
-    raise ValueError(
-        "SUPABASE_ANON_KEY не распознан. Укажите JWT anon key (eyJ...) "
-        "или publishable key (sb_publishable_...) из Supabase → Project Settings → API"
-    )
+    return SupabaseRestClient(clean_url, clean_key)
 
 
 def verify_supabase_connection(url: Optional[str], key: Optional[str]) -> None:
