@@ -1,0 +1,44 @@
+name: RedCat Chronicle
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  chronicle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run chronicler and update STATE.md
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          SITE_URL: https://redcatpromo.ru
+          ORCHESTRATOR_ACTION: chronicle
+        run: python orchestrator.py
+
+      - name: Commit STATE.md
+        run: |
+          git config user.name "RedCat Republic Bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add STATE.md
+          if git diff --staged --quiet; then
+            echo "STATE.md unchanged"
+          else
+            git commit -m "Update republic state [skip ci]"
+            git push
+          fi
