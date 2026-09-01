@@ -22,6 +22,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate Supabase credentials
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python validate_supabase.py
+
       - name: Run chronicler and update STATE.md
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
