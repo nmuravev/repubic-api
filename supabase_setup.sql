@@ -5,10 +5,11 @@ ALTER TABLE public.citizens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.interview_history ENABLE ROW LEVEL SECURITY;
+
 -- Фаза 1: session_id для приватных интервью
 ALTER TABLE public.interview_history ADD COLUMN IF NOT EXISTS session_id text;
 CREATE INDEX IF NOT EXISTS idx_interview_session ON public.interview_history(session_id);
-
 
 DROP POLICY IF EXISTS "public read citizens" ON public.citizens;
 CREATE POLICY "public read citizens" ON public.citizens FOR SELECT USING (true);
