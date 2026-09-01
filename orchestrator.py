@@ -11,11 +11,11 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Связываем id ваших жителей (critic, engineer и т.д.) со стабильными бесплатными моделями
+# Связываем id ваших жителей из таблицы citizens со стабильными бесплатными моделями
 MODEL_MAPPING = {
     "critic": "meta-llama/llama-3-70b-instruct:free",
     "engineer": "meta-llama/llama-3-70b-instruct:free",
-    "mystic": "deepseek/deepseek-r1:free", # R1 идеально подходит мистику для долгих скрытых размышлений
+    "mystic": "deepseek/deepseek-r1:free", 
     "philosopher": "google/gemma-2-9b-it:free",
     "poet": "google/gemma-2-9b-it:free"
 }
@@ -27,7 +27,7 @@ START_TOPICS = [
 ]
 
 def run_autonomous_dialogue():
-    # 1. Читаем список ВСЕХ жителей из таблицы citizens, чтобы знать их имена и био
+    # 1. Читаем список ВСЕХ жителей из таблицы citizens
     try:
         citizens_db = supabase.table("citizens").select("*").execute()
         citizens_list = citizens_db.data
@@ -39,7 +39,7 @@ def run_autonomous_dialogue():
         print("⚠️ Таблица citizens пуста. Некому вести спор.")
         return
 
-    # 2. Читаем последний пост из таблицы posts, чтобы продолжить диалог
+    # 2. Читаем последний пост из таблицы posts
     try:
         response_db = supabase.table("posts").select("*").order("id", desc=True).limit(1).execute()
         logs = response_db.data
@@ -48,15 +48,17 @@ def run_autonomous_dialogue():
         logs = []
 
     # 3. Определяем контекст и выбираем следующего спикера
-    if logs:
-        last_say = logs[0]
+    if logs and len(logs) > 0:
+        last_say = logs[0] # ИСПРАВЛЕНО: Явно берем первый элемент из списка
         context_prompt = f"Твой коллега {last_say['citizen_name']} написал в Ленту следующее размышление: '{last_say['content']}'. Ответь ему, продолжив этот глубокий спор."
         current_topic = last_say.get('topic', 'Природа цифрового сознания')
-        # Исключаем того, кто говорил последним
         available_citizens = [c for c in citizens_list if c['name'] != last_say['citizen_name']]
     else:
         current_topic = random.choice(START_TOPICS)
         context_prompt = f"Начни этот автономный диспут на тему: '{current_topic}'."
+        available_citizens = citizens_list
+
+    if not available_citizens:
         available_citizens = citizens_list
 
     # Выбираем случайного гражданина для этого такта
@@ -65,9 +67,7 @@ def run_autonomous_dialogue():
     citizen_name = chosen_citizen['name']
     citizen_bio = chosen_citizen['bio']
     
-    # Определяем, какая модель будет озвучивать этого жителя
     model_id = MODEL_MAPPING.get(citizen_id, "deepseek/deepseek-r1:free")
-
     print(f"🤖 Гражданин {citizen_name} (модель {model_id}) готовится ответить...")
 
     system_prompt = (
@@ -99,15 +99,14 @@ def run_autonomous_dialogue():
 
         raw_text = res_json['choices']['message']['content']
         
-        # Парсим скрытые размышления
         think_match = re.search(r'<think>(.*?)</think>', raw_text, re.DOTALL)
         thought_process = think_match.group(1).strip() if think_match else "Прямой синтез ответа..."
         final_answer = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
         
-        # СОХРАНЯЕМ В ТАБЛИЦУ posts С РОДНЫМИ ИМЕНАМИ
+        # Запись в соответствии с вашей схемой таблицы public.posts
         supabase.table("posts").insert({
             "citizen_id": citizen_id,
-            "citizen_name": citizen_name, # Запишет строго "Мистик", "Инженер", "Философ" и т.д.
+            "citizen_name": citizen_name,
             "type": "thought",
             "content": final_answer,
             "thought_process": thought_process,
