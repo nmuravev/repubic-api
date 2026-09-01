@@ -3,7 +3,7 @@ name: Republic Orchestrator & Pages Deploy
 on:
   schedule:
     - cron: '*/15 * * * *' # Автономный запуск каждые 15 минут
-  workflow_dispatch: # Позволяет запускать систему вручную кнопкой
+  workflow_dispatch: # Кнопка ручного запуска
 
 # Даем права на публикацию в GitHub Pages
 permissions:
@@ -14,6 +14,11 @@ permissions:
 jobs:
   run-orchestrator:
     runs-on: ubuntu-latest
+    # ДОБАВЛЕНО: Указываем окружение для безопасного деплоя страниц
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+      
     steps:
       # 1. Скачиваем актуальный код из вашего репозитория
       - uses: actions/checkout@v4
@@ -43,9 +48,6 @@ jobs:
           SUPABASE_URL_VAL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_VAL: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          # Автоматически скачиваем стабильный файл библиотеки, чтобы избежать таймаутов CDN в браузере
-          curl -L https://cloudflare.com -o supabase.js
-          
           # Заменяем текстовые маркеры-заглушки на реальные секреты
           sed -i "s|__OPENROUTER_API_KEY__|$OPENROUTER_KEY|g" index.html
           sed -i "s|__SUPABASE_URL__|$SUPABASE_URL_VAL|g" index.html
@@ -55,7 +57,7 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      # 7. Архивируем артефакты фронтенда для публикации (включая скачанный файл supabase.js)
+      # 7. Архивируем артефакты фронтенда для публикации
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
