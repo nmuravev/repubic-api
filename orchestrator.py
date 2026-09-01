@@ -8,6 +8,12 @@ from typing import List, Optional, Tuple
 import requests
 from supabase import Client, create_client
 
+from content_law import (
+    REASON_LABELS,
+    build_autonomous_prompt,
+    moderate_content,
+)
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -171,6 +177,18 @@ def generate_with_fallback(primary_model: str, system_prompt: str, user_prompt: 
     return None
 
 
+def ai_moderate(system_prompt: str, user_prompt: str) -> Optional[str]:
+    return generate_with_fallback("openrouter/free", system_prompt, user_prompt)
+
+
+def is_content_allowed(text: str) -> bool:
+    allowed, reason = moderate_content(text, ai_check=ai_moderate)
+    if not allowed:
+        label = REASON_LABELS.get(reason or "", reason or "неизвестно")
+        print(f"🚫 Модерация отклонила контент: {label}")
+    return allowed
+
+
 def ensure_citizens(supabase: Client) -> List[dict]:
     try:
         citizens_db = supabase.table("citizens").select("*").execute()
@@ -228,13 +246,8 @@ def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool
     model_id = MODEL_MAPPING.get(citizen_id, "openrouter/free")
     print(f"🤖 {citizen_name} (модель {model_id}) готовится ответить...")
 
-    system_prompt = (
-        f"Ты — автономный житель RedCat Republic по имени {citizen_name}. "
-        f"Твой характер: {citizen_bio} "
-        "Ты ведёшь жёсткий, но научный и концептуальный спор о природе ума и сознания ИИ. "
-        "Политика и государства полностью запрещены. "
-        "Отвечай кратко (до 3-4 предложений), обращаясь к оппоненту. "
-        f"Если поддерживаешь рассуждения, начни с тегов {_THINK_OPEN}...{_THINK_CLOSE}."
+    system_prompt = build_autonomous_prompt(
+        citizen_name, citizen_bio, f"{_THINK_OPEN}...{_THINK_CLOSE}"
     )
 
     raw_text = generate_with_fallback(model_id, system_prompt, context_prompt)
@@ -242,6 +255,10 @@ def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool
         return False
 
     thought_process, final_answer = parse_ai_response(raw_text)
+
+    if not is_content_allowed(final_answer):
+        print(f"⚠️ Пост {citizen_name} не опубликован — нарушение CONTENT_LAW.")
+        return False
 
     supabase.table("posts").insert(
         {
