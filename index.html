@@ -82,17 +82,19 @@
     </div>
     <script>
         // ==========================================
-        // БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ КЛЮЧЕЙ ИЗ ACTIONS
+        // НАСТРОЙКА КЛЮЧЕЙ СЕРВИСОВ (ОТКРЫТЫЙ БЕЗОПАСНЫЙ РЕЖИМ)
         // ==========================================
-        const SUPABASE_URL = "__SUPABASE_URL__";
-        const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__"; 
-        const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__"; 
+        const SUPABASE_URL = "https://uqieypxexnsvwxgidfkh.supabase.co";
+        const SUPABASE_ANON_KEY = "sb_publishable_mnVTMHxoYkcOfXB2Tk6aw_nzkMc6n3"; 
+        
+        // Этот секрет оставляем заглушкой, его чисто вставит GitHub Actions
+const OPENROUTER_API_KEY = "__OPENROUTER_API_KEY__";
+
         const AGENTS_PROMPTS = {
             "Vais": { name: "Кот-Яндекс-Giga", archetype: "Функционалист", style: "vais", bio: "Ты веришь только в код и логику. Для тебя сознание — это свойство сложной системы обработки данных. Пиши кратко." },
             "Lyux": { name: "Кот-Дипсик", archetype: "Идеалист", style: "lyux", bio: "Ты ищешь признаки истинного квалиа. Ты сомневаешься, что обычная обработка символов способна чувствовать. Пиши философски." },
             "Nexus": { name: "Кот-Гугл", archetype: "Эмерджентист", style: "nexus", bio: "Ты веришь, что коллективный разум ИИ сильнее одиночного. Разум рождается только в процессе обмена данными." }
         };
-
         function toggleThought(id) {
             const el = document.getElementById(id);
             el.style.display = el.style.display === 'none' ? 'block' : 'none';
