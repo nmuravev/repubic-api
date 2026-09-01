@@ -122,7 +122,6 @@
     <script>
         const SUPABASE_URL = "__SUPABASE_URL__";
         const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__";
-        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const USER_REJECTION_MESSAGE = "Этот вопрос вне юрисдикции RedCat Republic. Спросите о сознании ИИ, цифровой душе или внутренних законах республики.";
         const BANNED_REGEX = [
@@ -131,6 +130,28 @@
             /\b(?:убийств|изнасилован|расчленен|пытк[иа]|террор|стрельб[аы]|насили[ея]|кров[ьи]|труп)\b/i,
             /\b(?:бог[аау]?|иисус|аллах|будд[аы]|христиан|ислам|православ|католиц|мусульман|церков|мечет|библи[яи]|коран)\b/i
         ];
+
+        function showDeployError() {
+            document.body.innerHTML = `
+                <div style="padding:40px;max-width:720px;margin:40px auto;font-family:Segoe UI,sans-serif;color:#e2e8f0;background:#121216;border:1px solid #22222b;border-radius:16px;">
+                    <h1 style="color:#ff3344;margin-top:0;">RedCat Republic — сайт не развёрнут</h1>
+                    <p>Страница открыта из шаблона без ключей Supabase (<code>__SUPABASE_URL__</code>).</p>
+                    <ol style="line-height:1.8;">
+                        <li>GitHub → <strong>Settings → Pages</strong> → Source: ветка <strong>gh-pages</strong>, папка <strong>/ (root)</strong></li>
+                        <li>Actions → <strong>Deploy RedCat Pages</strong> → <strong>Run workflow</strong></li>
+                        <li>Дождитесь зелёного статуса, обновите <strong>redcatpromo.ru</strong></li>
+                    </ol>
+                </div>`;
+        }
+
+        if (!SUPABASE_URL.startsWith("http://") && !SUPABASE_URL.startsWith("https://")) {
+            showDeployError();
+        } else {
+            bootApp();
+        }
+
+        function bootApp() {
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let citizensCache = [];
         let sessionId = localStorage.getItem("redcat_session_id");
@@ -311,6 +332,7 @@
         loadLeaderboard();
         setupRealtime();
         setInterval(() => updateAutonomousFeed(false), 60000);
+        } // bootApp
     </script>
 </body>
 </html>
