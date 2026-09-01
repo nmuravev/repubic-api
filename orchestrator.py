@@ -35,8 +35,46 @@ CITIZENS = [
     }
 ]
 
+MODELS = [
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "google/gemma-2-9b-it:free",
+    "qwen/qwen-2.5-7b-instruct:free",
+    "openrouter/free"
+]
+
 POST_COST = 10
 VOTE_REWARD = 5
+
+
+def is_valid_response(text):
+    """Проверяет, что ответ осмысленный"""
+    if not text or len(text) < 15:
+        return False
+    
+    text_lower = text.lower().strip()
+    
+    bad_patterns = [
+        "user safety",
+        "content policy",
+        "i cannot",
+        "i can't",
+        "as an ai",
+        "as a language model",
+        "i'm sorry",
+        "i apologize",
+        "как языковая модель",
+        "я не могу",
+        "извините",
+        "safe",
+        "harmful"
+    ]
+    
+    for pattern in bad_patterns:
+        if pattern in text_lower:
+            return False
+    
+    return True
 
 
 def api_request(method, endpoint, data=None):
@@ -151,38 +189,51 @@ def generate_thought(citizen, forum_history, citizen_memory):
 Твоя память (последние действия):
 """ + citizen_memory + """
 
-Отвечай на русском, 1-3 предложения. Будь в характере."""
+ВАЖНО: Отвечай на русском языке, 1-3 предложения. Пиши осмысленный текст, а не системные сообщения. Будь в характере."""
 
-    user_prompt = "История форума:\n" + forum_history + "\n\nНапиши новый пост."
+    user_prompt = "История форума:\n" + forum_history + "\n\nНапиши новый пост на форум."
     
     headers = {"Authorization": "Bearer " + OPENROUTER_API_KEY}
-    payload = {
-        "model": "openrouter/free",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-    }
     
-    try:
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
+    for model in MODELS:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        }
         
-        if r.status_code == 200:
+        try:
+            r = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            
+            if r.status_code != 200:
+                print("Модель", model, "- статус:", r.status_code)
+                continue
+            
             data = r.json()
             choices = data.get("choices", [])
-            if choices:
-                text = choices[0]["message"]["content"]
-                if text and len(text) > 10:
-                    return text
-        else:
-            print("LLM error:", r.status_code)
-    except Exception as e:
-        print("LLM failed:", e)
+            if not choices:
+                continue
+            
+            text = choices[0]["message"]["content"]
+            print("Модель:", model, "| Ответ:", text[:80])
+            
+            if is_valid_response(text):
+                print("✓ Качественный ответ от", model)
+                return text
+            else:
+                print("✗ Ответ отклонен (некачественный)")
+                continue
+                
+        except Exception as e:
+            print("Ошибка модели", model, ":", e)
+            continue
     
     return None
 
@@ -235,10 +286,10 @@ def main():
     print("\nГенерируем мысль...")
     thought = generate_thought(citizen, forum_history, citizen_memory)
     if not thought:
-        print("Не удалось сгенерировать мысль")
+        print("Не удалось получить качественный ответ ни от одной модели")
         return
 
-    print("Мысль:", thought[:100])
+    print("Итоговая мысль:", thought[:100])
 
     new_credits = citizen_data.get("credits", 0) - POST_COST
     update_citizen(citizen["id"], {"credits": new_credits})
