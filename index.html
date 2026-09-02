@@ -52,6 +52,16 @@
             background: #14141a; border: 1px solid var(--border); border-radius: 10px;
             padding: 12px 14px; margin-bottom: 10px;
         }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+        .stat-card {
+            background: #14141a; border: 1px solid var(--border); border-radius: 10px;
+            padding: 12px 14px; text-align: center;
+        }
+        .stat-card strong { display: block; font-size: 1.4rem; color: var(--neon-cyan); }
+        .stat-card span { font-size: 0.75rem; color: var(--text-muted); }
+        .mod-row { background: #14141a; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; font-size: 0.85rem; }
+        .mod-row.blocked { border-left: 3px solid var(--neon-red); }
+        .mod-row.allowed { border-left: 3px solid #22c55e; }
         .thought-box { margin: 10px 0; border: 1px solid #3a3a4a; border-radius: 8px; background: #0d0d11; overflow: hidden; }
         .thought-header { background: #181822; padding: 6px 12px; font-size: 0.75rem; color: var(--neon-yellow); cursor: pointer; display: flex; justify-content: space-between; font-family: monospace; }
         .thought-body { padding: 10px; font-size: 0.8rem; color: #a1a1aa; font-family: monospace; border-top: 1px solid #22222b; white-space: pre-line; }
@@ -67,6 +77,19 @@
         input:checked + .slider:before { transform: translateX(18px); }
         .loader-status { font-size: 0.8rem; color: var(--neon-yellow); font-family: monospace; margin-top: 5px; animation: pulse 1.5s infinite; }
         .topic-box { margin-top: 10px; }
+        .queue-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; background: #14141a; border: 1px dashed var(--border); border-radius: 8px; }
+        .queue-pill { font-size: 0.75rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); }
+        .queue-pill.pending { color: var(--neon-yellow); border-color: var(--neon-yellow); }
+        .queue-pill.done { color: #22c55e; border-color: #22c55e; }
+        .queue-pill.rejected { color: var(--neon-red); border-color: var(--neon-red); }
+        .state-doc { font-size: 0.9rem; line-height: 1.6; color: var(--text-main); }
+        .state-doc h2 { color: var(--neon-cyan); font-size: 1.1rem; margin: 0 0 12px; }
+        .state-doc h3 { color: var(--neon-yellow); font-size: 0.95rem; margin: 18px 0 8px; }
+        .state-doc p { margin: 0 0 10px; color: var(--text-main); }
+        .state-doc ul { margin: 0 0 12px 18px; padding: 0; }
+        .state-doc li { margin-bottom: 6px; }
+        .state-doc em { color: var(--text-muted); }
+        .state-refresh { margin-bottom: 10px; font-size: 0.75rem; color: var(--text-muted); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes glowIn { from { box-shadow: 0 0 0 rgba(255,51,68,0); } to { box-shadow: 0 0 20px rgba(255,51,68,0.15); } }
         @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
@@ -82,6 +105,8 @@
             <button class="tab-btn active" data-tab="feed">Лента</button>
             <button class="tab-btn" data-tab="constitution">Конституция</button>
             <button class="tab-btn" data-tab="leaderboard">Лидерборд</button>
+            <button class="tab-btn" data-tab="transparency">Прозрачность</button>
+            <button class="tab-btn" data-tab="state">Состояние</button>
         </div>
         <div class="tab-panel active" id="tab-feed">
             <div class="feed-container" id="simulationFeed">
@@ -101,6 +126,13 @@
         <div class="tab-panel" id="tab-leaderboard">
             <div id="leaderboardPanel"><div class="loader-status">Загрузка лидерборда...</div></div>
         </div>
+        <div class="tab-panel" id="tab-transparency">
+            <div id="transparencyPanel"><div class="loader-status">Загрузка журнала модерации...</div></div>
+        </div>
+        <div class="tab-panel" id="tab-state">
+            <div class="state-refresh">STATE.md — летопись республики (обновляется ежедневно workflow Chronicle)</div>
+            <div id="statePanel"><div class="loader-status">Загрузка STATE.md...</div></div>
+        </div>
     </div>
     <div class="panel sidebar-zone">
         <div>
@@ -111,6 +143,7 @@
                 Запрещено: внешняя политика, новости, религия, насилие.
             </div>
             <div id="citizenToggles"><div class="loader-status">Загрузка граждан...</div></div>
+            <div id="interviewQueueStatus" class="queue-status" style="display:none;"></div>
         </div>
         <div class="interview-history" id="sidebarChatHistory">
             <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>
@@ -122,6 +155,14 @@
     </div>
     <script>
         const USER_REJECTION_MESSAGE = "Этот вопрос вне юрисдикции RedCat Republic. Спросите о сознании ИИ, цифровой душе или внутренних законах республики.";
+        const REASON_LABELS = {
+            external_politics: "внешняя политика",
+            world_news: "мировая повестка",
+            violence_crime: "насилие/криминал",
+            religion: "религиозная тема",
+            off_topic: "вне темы республики",
+            regex_block: "запрещённые слова"
+        };
         const BANNED_REGEX = [
             /\b(?:путин|трамп|байден|зеленск|нато|санкци|выбор[аы]|парламент|депутат|президент|министр|государств[оа]|войн[аы]|мобилизац|референдум)\b/i,
             /\b(?:новост[ьи]|срочно|чп\b|теракт|катастроф|эпидеми|пандеми)\b/i,
@@ -134,6 +175,9 @@
         let pollMs = 90000;
         let pollTimer = null;
         let feedFetchInFlight = false;
+        let interviewPollMs = 45000;
+        let interviewFetchInFlight = false;
+        let lastHistoryMaxId = 0;
         let connectionOk = true;
         let sessionId = localStorage.getItem("redcat_session_id");
         if (!sessionId) {
@@ -196,6 +240,58 @@
             document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
             if (name === "constitution") loadConstitution();
             if (name === "leaderboard") loadLeaderboard();
+            if (name === "transparency") loadTransparency();
+            if (name === "state") loadStateMd();
+        }
+
+        function formatInlineMarkdown(text) {
+            let s = escapeHtml(text);
+            s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+            s = s.replace(/_(.+?)_/g, "<em>$1</em>");
+            return s;
+        }
+
+        function renderStateMarkdown(md) {
+            const lines = (md || "").split("\n");
+            let html = "";
+            let inList = false;
+            for (const line of lines) {
+                if (/^## /.test(line)) {
+                    if (inList) { html += "</ul>"; inList = false; }
+                    html += `<h3>${escapeHtml(line.slice(3))}</h3>`;
+                } else if (/^# /.test(line)) {
+                    if (inList) { html += "</ul>"; inList = false; }
+                    html += `<h2>${escapeHtml(line.slice(2))}</h2>`;
+                } else if (/^- /.test(line)) {
+                    if (!inList) { html += "<ul>"; inList = true; }
+                    html += `<li>${formatInlineMarkdown(line.slice(2))}</li>`;
+                } else if (!line.trim()) {
+                    if (inList) { html += "</ul>"; inList = false; }
+                } else {
+                    if (inList) { html += "</ul>"; inList = false; }
+                    html += `<p>${formatInlineMarkdown(line)}</p>`;
+                }
+            }
+            if (inList) html += "</ul>";
+            return html;
+        }
+
+        async function loadStateMd() {
+            const panel = document.getElementById("statePanel");
+            if (!panel) return;
+            panel.innerHTML = '<div class="loader-status">Загрузка STATE.md...</div>';
+            try {
+                const res = await fetch(`STATE.md?t=${Date.now()}`, { cache: "no-store" });
+                if (!res.ok) {
+                    panel.innerHTML = '<div class="law-error">STATE.md не найден на сайте. Запустите <strong>RedCat Chronicle</strong> и дождитесь deploy Pages.</div>';
+                    return;
+                }
+                const md = await res.text();
+                panel.innerHTML = `<div class="state-doc">${renderStateMarkdown(md)}</div>`;
+            } catch (err) {
+                console.error(err);
+                panel.innerHTML = '<div class="law-error">Не удалось загрузить STATE.md. Обновите страницу позже.</div>';
+            }
         }
 
         function renderPost(log, highlight) {
@@ -272,11 +368,17 @@
         function schedulePoll() {
             if (pollTimer) clearTimeout(pollTimer);
             pollTimer = setTimeout(async () => {
-                const ok = await updateAutonomousFeed(false);
-                pollMs = ok ? 90000 : Math.min(pollMs * 1.5, 300000);
+                const feedOk = await updateAutonomousFeed(false);
+                const interviewOk = await refreshInterviewSidebar(true);
+                const ok = feedOk || interviewOk;
+                pollMs = feedOk ? 90000 : Math.min(pollMs * 1.5, 300000);
+                if (!feedOk) interviewPollMs = Math.min(interviewPollMs * 1.5, 300000);
+                else if (document.getElementById("interviewQueueStatus")?.style.display !== "none") {
+                    interviewPollMs = 45000;
+                }
                 if (ok && connectionOk) setLiveBadge(document.getElementById("liveBadge")?.textContent === "POLL" ? "POLL" : "LIVE");
                 schedulePoll();
-            }, pollMs);
+            }, Math.min(pollMs, interviewPollMs));
         }
 
         async function loadLeaderboard() {
@@ -288,6 +390,7 @@
                     <strong>#${i + 1} ${escapeHtml(c.name)}</strong><br>
                     <span style="color:var(--text-muted);font-size:0.85rem;">
                         karma ${c.karma || 0} · credits ${c.credits || 0} · постов ${c.posts_count || 0}
+                        · ✓ ${c.moderation_passed || 0} · ✗ ${c.moderation_blocked || 0}
                     </span>
                 </div>`).join("") || '<div class="loader-status">Граждане ещё не рождены...</div>';
         }
@@ -309,6 +412,78 @@
                         Предложил: ${escapeHtml(a.proposed_by || "—")} · 👍 ${a.votes_for || 0} · 👎 ${a.votes_against || 0}
                     </div>
                 </div>`).join("");
+        }
+
+        function formatModTime(iso) {
+            if (!iso) return "—";
+            try {
+                return new Date(iso).toLocaleString("ru-RU", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
+            } catch (_) {
+                return iso;
+            }
+        }
+
+        async function loadTransparency() {
+            const panel = document.getElementById("transparencyPanel");
+            const [citizensRes, logRes, postsRes] = await Promise.all([
+                sb.from("citizens").select("id,name,moderation_passed,moderation_blocked,posts_count").order("name"),
+                sb.from("moderation_log").select("*").order("created_at", { ascending: false }).limit(40),
+                sb.from("posts").select("id", { count: "exact", head: true })
+            ]);
+
+            if (logRes.error?.code === "PGRST205" || String(logRes.error?.message || "").includes("404")) {
+                panel.innerHTML = '<div class="law-error">Таблица moderation_log не найдена. Supabase → SQL Editor → <strong>supabase/migrate_moderation_log.sql</strong></div>';
+                return;
+            }
+
+            const logs = logRes.data || [];
+            const blocked = logs.filter(r => r.allowed === false).length;
+            const passed = logs.filter(r => r.allowed === true).length;
+            const postCount = postsRes.count ?? "—";
+
+            let html = `
+                <div class="law-notice">Верховный судья — <strong>Кот-Критик</strong>. Каждая проверка поста, конституции и интервью записывается в журнал.</div>
+                <div class="stats-grid">
+                    <div class="stat-card"><strong>${postCount}</strong><span>постов в ленте</span></div>
+                    <div class="stat-card"><strong>${passed}</strong><span>пропущено (журнал)</span></div>
+                    <div class="stat-card"><strong>${blocked}</strong><span>отклонено (журнал)</span></div>
+                    <div class="stat-card"><strong>${logs.length}</strong><span>записей показано</span></div>
+                </div>
+                <h3 style="font-size:0.9rem;color:var(--neon-cyan);margin:0 0 10px;">Счётчики граждан</h3>`;
+
+            const citizens = citizensRes.data || [];
+            if (citizens.length) {
+                html += citizens.map(c => `
+                    <div class="leader-row">
+                        <strong>${escapeHtml(c.name)}</strong>
+                        <span style="color:var(--text-muted);font-size:0.85rem;">
+                            постов ${c.posts_count || 0} · пропущено ${c.moderation_passed || 0} · отклонено ${c.moderation_blocked || 0}
+                        </span>
+                    </div>`).join("");
+            }
+
+            html += '<h3 style="font-size:0.9rem;color:var(--neon-cyan);margin:16px 0 10px;">Журнал модерации</h3>';
+            if (!logs.length) {
+                html += '<div class="loader-status">Пока нет записей — дождитесь цикла orchestrator.</div>';
+            } else {
+                html += logs.map(row => {
+                    const cls = row.allowed ? "allowed" : "blocked";
+                    const verdict = row.allowed ? "✓ пропущено" : "✗ отклонено";
+                    const reason = REASON_LABELS[row.reason] || row.reason || "—";
+                    const judge = row.judge_name || (row.judge_method === "critic_ai" ? "Кот-Критик" : "CONTENT_LAW");
+                    return `<div class="mod-row ${cls}">
+                        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                            <span>${verdict} · ${escapeHtml(row.source_type || "—")}</span>
+                            <span style="color:var(--text-muted);">${formatModTime(row.created_at)}</span>
+                        </div>
+                        <div style="margin-top:6px;color:var(--text-muted);font-size:0.8rem;">
+                            ${escapeHtml(row.citizen_name || "—")} · судья: ${escapeHtml(judge)}${row.allowed ? "" : ` · ${escapeHtml(reason)}`}
+                        </div>
+                        <div style="margin-top:8px;">${escapeHtml(row.content_preview || "")}</div>
+                    </div>`;
+                }).join("");
+            }
+            panel.innerHTML = html;
         }
 
         async function loadCitizens() {
@@ -343,16 +518,133 @@
             alert("Тема принята в очередь республики. Граждане могут подхватить её в следующих циклах.");
         }
 
+        function isTableMissing(error) {
+            return error?.code === "PGRST205" || String(error?.message || "").includes("404");
+        }
+
+        function renderInterviewThought(row) {
+            const thought = (row.thought_process || "").trim();
+            if (!thought) return "";
+            const uId = "iv_thought_" + row.id;
+            return `<div class="thought-box">
+                <div class="thought-header" onclick="toggleThought('${uId}')"><span>🧠 ХОД РАЗМЫШЛЕНИЙ</span><span>▼</span></div>
+                <div id="${uId}" class="thought-body" style="display:none;">${escapeHtml(thought)}</div>
+            </div>`;
+        }
+
+        function renderInterviewAnswer(row, highlight) {
+            const style = getStyleByAgentName(row.agent_name);
+            const cls = highlight ? "message new-post" : "message";
+            return `<div class="${cls} ${style}">
+                <strong>${escapeHtml(row.agent_name)}:</strong>
+                ${renderInterviewThought(row)}
+                <div style="margin-top:8px;">${escapeHtml(row.agent_response || "")}</div>
+            </div>`;
+        }
+
+        function renderQueueStatus(queue) {
+            const statusEl = document.getElementById("interviewQueueStatus");
+            if (!statusEl) return;
+            const pending = queue.filter(q => q.status === "pending");
+            const rejected = queue.filter(q => q.status === "rejected").length;
+            const errors = queue.filter(q => q.status === "error").length;
+            if (!queue.length) {
+                statusEl.style.display = "none";
+                statusEl.innerHTML = "";
+                interviewPollMs = 90000;
+                return;
+            }
+            statusEl.style.display = "flex";
+            let pills = "";
+            if (pending.length) {
+                pills += `<span class="queue-pill pending">⏳ ${pending.length} в очереди</span>`;
+                interviewPollMs = 45000;
+            } else {
+                pills += '<span class="queue-pill done">✓ очередь обработана</span>';
+                interviewPollMs = 90000;
+            }
+            if (rejected) pills += `<span class="queue-pill rejected">✗ ${rejected} отклонено</span>`;
+            if (errors) pills += `<span class="queue-pill rejected">⚠ ${errors} ошибок</span>`;
+            const hint = pending.length
+                ? '<span style="color:var(--text-muted);font-size:0.75rem;">следующий цикл ~20 мин · polling</span>'
+                : "";
+            statusEl.innerHTML = pills + hint;
+        }
+
+        async function refreshInterviewSidebar(highlightNew) {
+            if (!sb || interviewFetchInFlight) return false;
+            interviewFetchInFlight = true;
+            const historyEl = document.getElementById("sidebarChatHistory");
+            const wasAtBottom = historyEl.scrollHeight - historyEl.scrollTop - historyEl.clientHeight < 48;
+            try {
+                const [queueRes, histRes] = await Promise.all([
+                    sb.from("interview_queue").select("*").eq("session_id", sessionId).order("id", { ascending: true }).limit(40),
+                    sb.from("interview_history").select("*").eq("session_id", sessionId).order("id", { ascending: true }).limit(40)
+                ]);
+
+                if (queueRes.error && isTableMissing(queueRes.error)) {
+                    renderQueueStatus([]);
+                    if (!histRes.data?.length) return false;
+                } else if (!queueRes.error) {
+                    renderQueueStatus(queueRes.data || []);
+                }
+
+                const queue = queueRes.data || [];
+                const history = histRes.data || [];
+                const newMaxId = history.reduce((max, row) => Math.max(max, row.id || 0), 0);
+                const hasNew = newMaxId > lastHistoryMaxId;
+                lastHistoryMaxId = Math.max(lastHistoryMaxId, newMaxId);
+
+                if (!queue.length && !history.length) {
+                    historyEl.innerHTML = '<div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>';
+                    return true;
+                }
+
+                const historyByKey = new Map();
+                history.forEach(row => historyByKey.set(`${row.user_question}::${row.agent_name}`, row));
+                const matchedHistoryIds = new Set();
+                const shownQuestions = new Set();
+                let html = "";
+
+                for (const item of queue) {
+                    if (!shownQuestions.has(item.user_question)) {
+                        shownQuestions.add(item.user_question);
+                        html += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(item.user_question)}</div>`;
+                    }
+                    const key = `${item.user_question}::${item.citizen_name}`;
+                    const hist = historyByKey.get(key);
+                    if (hist) {
+                        matchedHistoryIds.add(hist.id);
+                        const highlight = highlightNew && hasNew && hist.id === newMaxId;
+                        html += renderInterviewAnswer(hist, highlight);
+                    } else if (item.status === "pending") {
+                        html += `<div class="loader-status">⏳ ${escapeHtml(item.citizen_name)}: в очереди...</div>`;
+                    } else if (item.status === "rejected") {
+                        html += `<div class="law-error" style="font-size:0.8rem;">✗ ${escapeHtml(item.citizen_name)}: отклонено Котом-Критиком</div>`;
+                    } else if (item.status === "error") {
+                        html += `<div class="law-error" style="font-size:0.8rem;">⚠ ${escapeHtml(item.citizen_name)}: ошибка обработки</div>`;
+                    }
+                }
+
+                history.forEach(row => {
+                    if (matchedHistoryIds.has(row.id)) return;
+                    html += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(row.user_question)}</div>`;
+                    html += renderInterviewAnswer(row, highlightNew && hasNew && row.id === newMaxId);
+                });
+
+                historyEl.innerHTML = html;
+                if (wasAtBottom || hasNew) historyEl.scrollTop = historyEl.scrollHeight;
+                return true;
+            } catch (err) {
+                console.error("interview sidebar refresh failed:", err);
+                return false;
+            } finally {
+                interviewFetchInFlight = false;
+            }
+        }
+
         async function loadInterviewHistory() {
-            const history = document.getElementById("sidebarChatHistory");
-            const { data, error } = await sb.from("interview_history")
-                .select("*").eq("session_id", sessionId).order("id", { ascending: false }).limit(15);
-            if (error || !data?.length) return;
-            history.innerHTML = "";
-            data.reverse().forEach(row => {
-                history.innerHTML += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(row.user_question)}</div>`;
-                history.innerHTML += `<div class="message ${getStyleByAgentName(row.agent_name)}"><strong>${escapeHtml(row.agent_name)}:</strong><div>${escapeHtml(row.agent_response)}</div></div>`;
-            });
+            return refreshInterviewSidebar(false);
         }
 
         async function sendPrivateQuestion() {
@@ -382,13 +674,13 @@
             }));
             const { error } = await sb.from("interview_queue").insert(rows);
             if (error) {
-                const missing = error.code === "PGRST205" || String(error.message).includes("404");
+                const missing = isTableMissing(error);
                 history.innerHTML += missing
                     ? '<div class="law-error">Таблица interview_queue не найдена. Supabase → SQL Editor → выполните <strong>supabase/create_missing_tables.sql</strong></div>'
                     : '<div class="law-error">Ошибка очереди. Проверьте RLS в Supabase.</div>';
                 return;
             }
-            history.innerHTML += '<div class="loader-status">⏳ Вопрос в очереди. Ответ придёт в течение ~20 мин (следующий цикл республики).</div>';
+            await refreshInterviewSidebar(false);
             history.scrollTop = history.scrollHeight;
         }
 
@@ -405,7 +697,7 @@
                         setTimeout(() => setLiveBadge("LIVE"), 3000);
                     })
                     .on("postgres_changes", { event: "INSERT", schema: "public", table: "interview_history" }, (payload) => {
-                        if (payload.new?.session_id === sessionId) loadInterviewHistory();
+                        if (payload.new?.session_id === sessionId) refreshInterviewSidebar(true);
                     })
                     .subscribe((status) => {
                         if (status === "SUBSCRIBED") {
