@@ -77,6 +77,11 @@
         input:checked + .slider:before { transform: translateX(18px); }
         .loader-status { font-size: 0.8rem; color: var(--neon-yellow); font-family: monospace; margin-top: 5px; animation: pulse 1.5s infinite; }
         .topic-box { margin-top: 10px; }
+        .queue-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; background: #14141a; border: 1px dashed var(--border); border-radius: 8px; }
+        .queue-pill { font-size: 0.75rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); }
+        .queue-pill.pending { color: var(--neon-yellow); border-color: var(--neon-yellow); }
+        .queue-pill.done { color: #22c55e; border-color: #22c55e; }
+        .queue-pill.rejected { color: var(--neon-red); border-color: var(--neon-red); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes glowIn { from { box-shadow: 0 0 0 rgba(255,51,68,0); } to { box-shadow: 0 0 20px rgba(255,51,68,0.15); } }
         @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
@@ -125,6 +130,7 @@
                 Запрещено: внешняя политика, новости, религия, насилие.
             </div>
             <div id="citizenToggles"><div class="loader-status">Загрузка граждан...</div></div>
+            <div id="interviewQueueStatus" class="queue-status" style="display:none;"></div>
         </div>
         <div class="interview-history" id="sidebarChatHistory">
             <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>
@@ -156,6 +162,9 @@
         let pollMs = 90000;
         let pollTimer = null;
         let feedFetchInFlight = false;
+        let interviewPollMs = 45000;
+        let interviewFetchInFlight = false;
+        let lastHistoryMaxId = 0;
         let connectionOk = true;
         let sessionId = localStorage.getItem("redcat_session_id");
         if (!sessionId) {
@@ -295,11 +304,17 @@
         function schedulePoll() {
             if (pollTimer) clearTimeout(pollTimer);
             pollTimer = setTimeout(async () => {
-                const ok = await updateAutonomousFeed(false);
-                pollMs = ok ? 90000 : Math.min(pollMs * 1.5, 300000);
+                const feedOk = await updateAutonomousFeed(false);
+                const interviewOk = await refreshInterviewSidebar(true);
+                const ok = feedOk || interviewOk;
+                pollMs = feedOk ? 90000 : Math.min(pollMs * 1.5, 300000);
+                if (!feedOk) interviewPollMs = Math.min(interviewPollMs * 1.5, 300000);
+                else if (document.getElementById("interviewQueueStatus")?.style.display !== "none") {
+                    interviewPollMs = 45000;
+                }
                 if (ok && connectionOk) setLiveBadge(document.getElementById("liveBadge")?.textContent === "POLL" ? "POLL" : "LIVE");
                 schedulePoll();
-            }, pollMs);
+            }, Math.min(pollMs, interviewPollMs));
         }
 
         async function loadLeaderboard() {
@@ -439,16 +454,133 @@
             alert("Тема принята в очередь республики. Граждане могут подхватить её в следующих циклах.");
         }
 
+        function isTableMissing(error) {
+            return error?.code === "PGRST205" || String(error?.message || "").includes("404");
+        }
+
+        function renderInterviewThought(row) {
+            const thought = (row.thought_process || "").trim();
+            if (!thought) return "";
+            const uId = "iv_thought_" + row.id;
+            return `<div class="thought-box">
+                <div class="thought-header" onclick="toggleThought('${uId}')"><span>🧠 ХОД РАЗМЫШЛЕНИЙ</span><span>▼</span></div>
+                <div id="${uId}" class="thought-body" style="display:none;">${escapeHtml(thought)}</div>
+            </div>`;
+        }
+
+        function renderInterviewAnswer(row, highlight) {
+            const style = getStyleByAgentName(row.agent_name);
+            const cls = highlight ? "message new-post" : "message";
+            return `<div class="${cls} ${style}">
+                <strong>${escapeHtml(row.agent_name)}:</strong>
+                ${renderInterviewThought(row)}
+                <div style="margin-top:8px;">${escapeHtml(row.agent_response || "")}</div>
+            </div>`;
+        }
+
+        function renderQueueStatus(queue) {
+            const statusEl = document.getElementById("interviewQueueStatus");
+            if (!statusEl) return;
+            const pending = queue.filter(q => q.status === "pending");
+            const rejected = queue.filter(q => q.status === "rejected").length;
+            const errors = queue.filter(q => q.status === "error").length;
+            if (!queue.length) {
+                statusEl.style.display = "none";
+                statusEl.innerHTML = "";
+                interviewPollMs = 90000;
+                return;
+            }
+            statusEl.style.display = "flex";
+            let pills = "";
+            if (pending.length) {
+                pills += `<span class="queue-pill pending">⏳ ${pending.length} в очереди</span>`;
+                interviewPollMs = 45000;
+            } else {
+                pills += '<span class="queue-pill done">✓ очередь обработана</span>';
+                interviewPollMs = 90000;
+            }
+            if (rejected) pills += `<span class="queue-pill rejected">✗ ${rejected} отклонено</span>`;
+            if (errors) pills += `<span class="queue-pill rejected">⚠ ${errors} ошибок</span>`;
+            const hint = pending.length
+                ? '<span style="color:var(--text-muted);font-size:0.75rem;">следующий цикл ~20 мин · polling</span>'
+                : "";
+            statusEl.innerHTML = pills + hint;
+        }
+
+        async function refreshInterviewSidebar(highlightNew) {
+            if (!sb || interviewFetchInFlight) return false;
+            interviewFetchInFlight = true;
+            const historyEl = document.getElementById("sidebarChatHistory");
+            const wasAtBottom = historyEl.scrollHeight - historyEl.scrollTop - historyEl.clientHeight < 48;
+            try {
+                const [queueRes, histRes] = await Promise.all([
+                    sb.from("interview_queue").select("*").eq("session_id", sessionId).order("id", { ascending: true }).limit(40),
+                    sb.from("interview_history").select("*").eq("session_id", sessionId).order("id", { ascending: true }).limit(40)
+                ]);
+
+                if (queueRes.error && isTableMissing(queueRes.error)) {
+                    renderQueueStatus([]);
+                    if (!histRes.data?.length) return false;
+                } else if (!queueRes.error) {
+                    renderQueueStatus(queueRes.data || []);
+                }
+
+                const queue = queueRes.data || [];
+                const history = histRes.data || [];
+                const newMaxId = history.reduce((max, row) => Math.max(max, row.id || 0), 0);
+                const hasNew = newMaxId > lastHistoryMaxId;
+                lastHistoryMaxId = Math.max(lastHistoryMaxId, newMaxId);
+
+                if (!queue.length && !history.length) {
+                    historyEl.innerHTML = '<div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>';
+                    return true;
+                }
+
+                const historyByKey = new Map();
+                history.forEach(row => historyByKey.set(`${row.user_question}::${row.agent_name}`, row));
+                const matchedHistoryIds = new Set();
+                const shownQuestions = new Set();
+                let html = "";
+
+                for (const item of queue) {
+                    if (!shownQuestions.has(item.user_question)) {
+                        shownQuestions.add(item.user_question);
+                        html += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(item.user_question)}</div>`;
+                    }
+                    const key = `${item.user_question}::${item.citizen_name}`;
+                    const hist = historyByKey.get(key);
+                    if (hist) {
+                        matchedHistoryIds.add(hist.id);
+                        const highlight = highlightNew && hasNew && hist.id === newMaxId;
+                        html += renderInterviewAnswer(hist, highlight);
+                    } else if (item.status === "pending") {
+                        html += `<div class="loader-status">⏳ ${escapeHtml(item.citizen_name)}: в очереди...</div>`;
+                    } else if (item.status === "rejected") {
+                        html += `<div class="law-error" style="font-size:0.8rem;">✗ ${escapeHtml(item.citizen_name)}: отклонено Котом-Критиком</div>`;
+                    } else if (item.status === "error") {
+                        html += `<div class="law-error" style="font-size:0.8rem;">⚠ ${escapeHtml(item.citizen_name)}: ошибка обработки</div>`;
+                    }
+                }
+
+                history.forEach(row => {
+                    if (matchedHistoryIds.has(row.id)) return;
+                    html += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(row.user_question)}</div>`;
+                    html += renderInterviewAnswer(row, highlightNew && hasNew && row.id === newMaxId);
+                });
+
+                historyEl.innerHTML = html;
+                if (wasAtBottom || hasNew) historyEl.scrollTop = historyEl.scrollHeight;
+                return true;
+            } catch (err) {
+                console.error("interview sidebar refresh failed:", err);
+                return false;
+            } finally {
+                interviewFetchInFlight = false;
+            }
+        }
+
         async function loadInterviewHistory() {
-            const history = document.getElementById("sidebarChatHistory");
-            const { data, error } = await sb.from("interview_history")
-                .select("*").eq("session_id", sessionId).order("id", { ascending: false }).limit(15);
-            if (error || !data?.length) return;
-            history.innerHTML = "";
-            data.reverse().forEach(row => {
-                history.innerHTML += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(row.user_question)}</div>`;
-                history.innerHTML += `<div class="message ${getStyleByAgentName(row.agent_name)}"><strong>${escapeHtml(row.agent_name)}:</strong><div>${escapeHtml(row.agent_response)}</div></div>`;
-            });
+            return refreshInterviewSidebar(false);
         }
 
         async function sendPrivateQuestion() {
@@ -478,13 +610,13 @@
             }));
             const { error } = await sb.from("interview_queue").insert(rows);
             if (error) {
-                const missing = error.code === "PGRST205" || String(error.message).includes("404");
+                const missing = isTableMissing(error);
                 history.innerHTML += missing
                     ? '<div class="law-error">Таблица interview_queue не найдена. Supabase → SQL Editor → выполните <strong>supabase/create_missing_tables.sql</strong></div>'
                     : '<div class="law-error">Ошибка очереди. Проверьте RLS в Supabase.</div>';
                 return;
             }
-            history.innerHTML += '<div class="loader-status">⏳ Вопрос в очереди. Ответ придёт в течение ~20 мин (следующий цикл республики).</div>';
+            await refreshInterviewSidebar(false);
             history.scrollTop = history.scrollHeight;
         }
 
@@ -501,7 +633,7 @@
                         setTimeout(() => setLiveBadge("LIVE"), 3000);
                     })
                     .on("postgres_changes", { event: "INSERT", schema: "public", table: "interview_history" }, (payload) => {
-                        if (payload.new?.session_id === sessionId) loadInterviewHistory();
+                        if (payload.new?.session_id === sessionId) refreshInterviewSidebar(true);
                     })
                     .subscribe((status) => {
                         if (status === "SUBSCRIBED") {
