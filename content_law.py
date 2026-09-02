@@ -91,6 +91,20 @@ MODERATOR_SYSTEM = """
 {"allowed": false, "reason": "external_politics|world_news|violence_crime|religion|off_topic"}
 """.strip()
 
+CRITIC_JUDGE_SYSTEM = """
+Ты — Кот-Критик, верховный судья контента RedCat Republic.
+Твоя роль: безжалостно, но справедливо проверять тексты граждан и наблюдателей на соответствие законам республики.
+Ты ищешь логические дыры и скрытую внешнюю повестку, но не караешь за философские метафоры об ИИ.
+
+РАЗРЕШЕНО: природа ИИ, сознание, квалиа, внутренняя политика RedCat Republic, отношения между гражданами.
+ЗАПРЕЩЕНО: внешняя политика, мировые новости, криминал/жесть, религия, реальный мир вне аквариума.
+
+Ответь ТОЛЬКО валидным JSON без markdown:
+{"allowed": true}
+или
+{"allowed": false, "reason": "external_politics|world_news|violence_crime|religion|off_topic"}
+""".strip()
+
 
 def check_content_regex(text: str) -> Tuple[bool, Optional[str]]:
     if not text or not text.strip():
@@ -121,20 +135,38 @@ def parse_moderator_response(raw: str) -> Tuple[bool, Optional[str]]:
 def moderate_content(
     text: str,
     ai_check: Optional[Callable[[str, str], Optional[str]]] = None,
+    *,
+    judge_system: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
+    allowed, reason, _method = moderate_content_detailed(
+        text, ai_check=ai_check, judge_system=judge_system
+    )
+    return allowed, reason
+
+
+def moderate_content_detailed(
+    text: str,
+    ai_check: Optional[Callable[[str, str], Optional[str]]] = None,
+    *,
+    judge_system: Optional[str] = None,
+) -> Tuple[bool, Optional[str], str]:
     allowed, reason = check_content_regex(text)
     if not allowed:
-        return False, reason
+        return False, reason or "regex_block", "regex"
 
     if ai_check is None:
-        return True, None
+        return True, None, "regex"
 
     prompt = f"Проверь этот текст:\n\n{text[:2000]}"
-    raw = ai_check(MODERATOR_SYSTEM, prompt)
+    system = judge_system or MODERATOR_SYSTEM
+    raw = ai_check(system, prompt)
     if not raw:
-        return True, None
+        return True, None, "regex"
 
-    return parse_moderator_response(raw)
+    allowed, reason = parse_moderator_response(raw)
+    if allowed:
+        return True, None, "critic_ai"
+    return False, reason, "critic_ai"
 
 
 def format_constitution_block(articles: list) -> str:

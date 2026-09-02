@@ -37,6 +37,8 @@ CSV здесь не поможет — нужен именно SQL Editor (со�
 
 Для дедупа голосов по конституции (фаза 2) выполните [`migrate_constitution_votes.sql`](migrate_constitution_votes.sql).
 
+Для журнала модерации и счётчиков на гражданах (фаза 3) выполните [`migrate_moderation_log.sql`](migrate_moderation_log.sql).
+
 ---
 
 Supabase **импортирует данные** через CSV (Table Editor → Import), а **схему и политики** — через SQL Editor. Это разные разделы дашборда.
