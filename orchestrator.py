@@ -748,6 +748,16 @@ def process_interview_queue(supabase: SupabaseRestClient, citizens_list: List[di
                 "agent_response": answer,
             }
         ).execute()
+        process_memory_after_post(
+            supabase,
+            citizen,
+            "интервью с наблюдателем",
+            thought_process,
+            answer,
+            item["user_question"],
+            None,
+            generate_with_fallback,
+        )
         supabase.table("interview_queue").update({"status": "done"}).eq("id", item["id"]).execute()
         print(f"💬 Ответ в interview_queue #{item['id']} от {citizen['name']}")
         success = True
