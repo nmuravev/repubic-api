@@ -202,7 +202,7 @@ def is_content_allowed(text: str) -> bool:
     return allowed
 
 
-def ensure_citizens(supabase: Client) -> List[dict]:
+def ensure_citizens(supabase: SupabaseRestClient) -> List[dict]:
     try:
         citizens_db = supabase.table("citizens").select("*").execute()
         citizens_list = citizens_db.data or []
@@ -238,7 +238,7 @@ def get_active_citizens(citizens_list: List[dict]) -> List[dict]:
     return active or citizens_list
 
 
-def pick_topic(supabase: Client, fallback: str) -> str:
+def pick_topic(supabase: SupabaseRestClient, fallback: str) -> str:
     try:
         suggestions = (
             supabase.table("topic_suggestions")
@@ -272,7 +272,7 @@ def pick_topic(supabase: Client, fallback: str) -> str:
     return fallback
 
 
-def apply_karma_rewards(supabase: Client) -> bool:
+def apply_karma_rewards(supabase: SupabaseRestClient) -> bool:
     try:
         posts_db = (
             supabase.table("posts")
@@ -317,7 +317,7 @@ def apply_karma_rewards(supabase: Client) -> bool:
 
 
 def publish_post(
-    supabase: Client,
+    supabase: SupabaseRestClient,
     citizen: dict,
     content: str,
     thought_process: str,
@@ -353,7 +353,7 @@ def publish_post(
     return True
 
 
-def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool:
+def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
         response_db = (
             supabase.table("posts").select("*").order("id", desc=True).limit(1).execute()
@@ -405,7 +405,7 @@ def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool
     return True
 
 
-def run_autonomous_voting(supabase: Client, citizens_list: List[dict]) -> bool:
+def run_autonomous_voting(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
         posts_db = (
             supabase.table("posts").select("*").order("id", desc=True).limit(15).execute()
@@ -483,7 +483,7 @@ def run_autonomous_voting(supabase: Client, citizens_list: List[dict]) -> bool:
     return True
 
 
-def run_constitution_proposal(supabase: Client, citizens_list: List[dict]) -> bool:
+def run_constitution_proposal(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
         pending = (
             supabase.table("constitution")
@@ -537,7 +537,7 @@ def run_constitution_proposal(supabase: Client, citizens_list: List[dict]) -> bo
     return True
 
 
-def run_constitution_voting(supabase: Client, citizens_list: List[dict]) -> bool:
+def run_constitution_voting(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
         pending_db = (
             supabase.table("constitution")
@@ -583,7 +583,7 @@ def run_constitution_voting(supabase: Client, citizens_list: List[dict]) -> bool
     return True
 
 
-def run_chronicler(supabase: Client, citizens_list: List[dict]) -> bool:
+def run_chronicler(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     chronicler = next((c for c in citizens_list if c["id"] == "chronicler"), None)
     if not chronicler:
         return False
@@ -633,7 +633,7 @@ def run_chronicler(supabase: Client, citizens_list: List[dict]) -> bool:
     return True
 
 
-def process_interview_queue(supabase: Client, citizens_list: List[dict]) -> bool:
+def process_interview_queue(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
         queue_db = (
             supabase.table("interview_queue")
@@ -712,7 +712,7 @@ def process_interview_queue(supabase: Client, citizens_list: List[dict]) -> bool
     return success
 
 
-def write_state_md(supabase: Client) -> bool:
+def write_state_md(supabase: SupabaseRestClient) -> bool:
     try:
         citizens = supabase.table("citizens").select("*").order("karma", desc=True).execute().data or []
         posts = supabase.table("posts").select("*").order("id", desc=True).limit(5).execute().data or []

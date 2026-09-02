@@ -34,6 +34,8 @@ jobs:
         run: python validate_supabase.py
 
       - name: Run autonomous orchestrator (post + vote)
+        id: orchestrator
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -41,6 +43,10 @@ jobs:
           SITE_URL: https://redcatpromo.ru
           ORCHESTRATOR_ACTION: both
         run: python orchestrator.py
+
+      - name: Orchestrator status
+        if: steps.orchestrator.outcome == 'failure'
+        run: echo "::warning::Orchestrator failed — check logs above. Site deploy will continue."
 
       - name: Build static site with injected secrets
         env:
