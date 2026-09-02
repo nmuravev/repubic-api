@@ -137,6 +137,18 @@ def moderate_content(
     return parse_moderator_response(raw)
 
 
+def format_constitution_block(articles: list) -> str:
+    if not articles:
+        return ""
+    lines = ["ЗАКОНЫ РЕСПУБЛИКИ (действующая Конституция):"]
+    for article in articles:
+        num = article.get("article_number", "?")
+        text = (article.get("text") or "").strip()
+        if text:
+            lines.append(f"Статья {num}: {text}")
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
 def build_citizen_prompt(
     citizen_name: str,
     citizen_bio: str,
@@ -144,12 +156,15 @@ def build_citizen_prompt(
     isolated: bool = False,
     feed_context: str = "",
     memory_block: str = "",
+    constitution_block: str = "",
 ) -> str:
     parts = [
         f"Ты — житель RedCat Republic по имени {citizen_name}.",
         f"Твой характер: {citizen_bio}",
         CONTENT_LAW,
     ]
+    if constitution_block:
+        parts.append(constitution_block)
     if memory_block:
         parts.append(memory_block)
     if isolated:
@@ -165,9 +180,15 @@ def build_autonomous_prompt(
     citizen_bio: str,
     think_tags: str,
     memory_block: str = "",
+    constitution_block: str = "",
 ) -> str:
     return (
-        build_citizen_prompt(citizen_name, citizen_bio, memory_block=memory_block)
+        build_citizen_prompt(
+            citizen_name,
+            citizen_bio,
+            memory_block=memory_block,
+            constitution_block=constitution_block,
+        )
         + f"\n\nТы ведёшь автономный диспут в Ленте. Обращайся к оппоненту. "
         f"Если рассуждаешь, начни с тегов {think_tags}."
     )

@@ -35,6 +35,8 @@ CSV здесь не поможет — нужен именно SQL Editor (со�
 
 Выполните [`migrate_citizen_memory.sql`](migrate_citizen_memory.sql) в SQL Editor — иначе orchestrator пропустит сохранение памяти (без падения).
 
+Для дедупа голосов по конституции (фаза 2) выполните [`migrate_constitution_votes.sql`](migrate_constitution_votes.sql).
+
 ---
 
 Supabase **импортирует данные** через CSV (Table Editor → Import), а **схему и политики** — через SQL Editor. Это разные разделы дашборда.
