@@ -12,11 +12,14 @@ from content_law import (
     REASON_LABELS,
     build_autonomous_prompt,
     build_citizen_prompt,
+    format_constitution_block,
     moderate_content,
 )
 from memory import (
+    export_memory_to_git,
     format_memory_block,
     load_memory_for_citizen,
+    load_recent_memory_digest,
     process_memory_after_post,
 )
 from supabase_client import SupabaseRestClient, create_supabase_client
@@ -373,6 +376,28 @@ def publish_post(
     return post_id
 
 
+def get_autonomous_context(supabase: SupabaseRestClient, citizen_id: str) -> Tuple[str, str]:
+    memory_entries = load_memory_for_citizen(supabase, citizen_id)
+    memory_block = format_memory_block(memory_entries, citizen_id)
+    constitution_block = format_constitution_block(load_active_constitution(supabase))
+    return memory_block, constitution_block
+
+
+def load_active_constitution(supabase: SupabaseRestClient) -> List[dict]:
+    try:
+        result = (
+            supabase.table("constitution")
+            .select("*")
+            .eq("is_active", True)
+            .order("article_number", desc=False)
+            .execute()
+        )
+        return result.data or []
+    except Exception as exc:
+        print(f"ℹ️ constitution недоступна для промпта: {exc}")
+        return []
+
+
 def build_dialogue_context(logs: List[dict]) -> Tuple[str, str]:
     if not logs:
         return "", ""
@@ -417,11 +442,14 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
     model_id = MODEL_MAPPING.get(citizen_id, "openrouter/free")
     print(f"🤖 {citizen_name} (модель {model_id}) готовится ответить...")
 
-    memory_entries = load_memory_for_citizen(supabase, citizen_id)
-    memory_block = format_memory_block(memory_entries, citizen_id)
+    memory_block, constitution_block = get_autonomous_context(supabase, citizen_id)
 
     system_prompt = build_autonomous_prompt(
-        citizen_name, citizen_bio, f"{_THINK_OPEN}...{_THINK_CLOSE}", memory_block=memory_block
+        citizen_name,
+        citizen_bio,
+        f"{_THINK_OPEN}...{_THINK_CLOSE}",
+        memory_block=memory_block,
+        constitution_block=constitution_block,
     )
     raw_text = generate_with_fallback(model_id, system_prompt, context_prompt)
     if not raw_text:
@@ -543,10 +571,13 @@ def run_constitution_proposal(supabase: SupabaseRestClient, citizens_list: List[
 
     proposer = random.choice(get_active_citizens(citizens_list))
     model_id = MODEL_MAPPING.get(proposer["id"], "openrouter/free")
+    memory_block, constitution_block = get_autonomous_context(supabase, proposer["id"])
     system_prompt = build_autonomous_prompt(
         proposer["name"],
         proposer.get("bio", ""),
         f"{_THINK_OPEN}...{_THINK_CLOSE}",
+        memory_block=memory_block,
+        constitution_block=constitution_block,
     )
     user_prompt = (
         "Предложи одну новую статью Конституции RedCat Republic об ИИ, сознании или "
@@ -598,12 +629,35 @@ def run_constitution_voting(supabase: SupabaseRestClient, citizens_list: List[di
     if not articles:
         return False
 
-    article = random.choice(articles)
-    voter = random.choice(citizens_list)
+    try:
+        votes_db = supabase.table("constitution_votes").select("article_id,voter_id").execute()
+        existing_votes = {(v["article_id"], v["voter_id"]) for v in (votes_db.data or [])}
+    except Exception as exc:
+        print(f"ℹ️ constitution_votes недоступна (голосуйте без дедупа): {exc}")
+        existing_votes = set()
+
+    candidates = [
+        (article, citizen)
+        for article in articles
+        for citizen in citizens_list
+        if (article["id"], citizen["id"]) not in existing_votes
+    ]
+    if not candidates:
+        print("ℹ️ Нет новых пар гражданин/статья для голосования по конституции.")
+        return False
+
+    article, voter = random.choice(candidates)
     model_id = MODEL_MAPPING.get(voter["id"], "openrouter/free")
+    memory_block, constitution_block = get_autonomous_context(supabase, voter["id"])
     raw = generate_with_fallback(
         model_id,
-        f"Ты — {voter['name']}, житель RedCat Republic. Голосуй за или против статьи конституции. Ответь UP или DOWN.",
+        build_citizen_prompt(
+            voter["name"],
+            voter.get("bio", ""),
+            memory_block=memory_block,
+            constitution_block=constitution_block,
+        )
+        + "\n\nГолосуй за или против статьи конституции. Ответь UP или DOWN.",
         f"Статья #{article['article_number']}: {article['text']}",
     )
     if not raw:
@@ -622,6 +676,23 @@ def run_constitution_voting(supabase: SupabaseRestClient, citizens_list: List[di
         updates["is_active"] = True
 
     supabase.table("constitution").update(updates).eq("id", article["id"]).execute()
+    try:
+        supabase.table("constitution_votes").insert(
+            {
+                "article_id": article["id"],
+                "voter_id": voter["id"],
+                "voter_name": voter["name"],
+                "vote_for": vote_for,
+            }
+        ).execute()
+    except Exception as exc:
+        print(f"⚠️ Не удалось записать constitution_vote: {exc}")
+
+    if updates.get("is_active"):
+        supabase.table("constitution").update({"is_active": False}).eq("is_active", True).neq(
+            "id", article["id"]
+        ).execute()
+
     print(f"⚖️ {voter['name']} проголосовал по статье #{article['article_number']}")
     return True
 
@@ -649,13 +720,21 @@ def run_chronicler(supabase: SupabaseRestClient, citizens_list: List[dict]) -> b
     digest = "\n".join(
         f"- {p['citizen_name']}: {p['content'][:120]}..." for p in reversed(posts[:15])
     )
+    memory_digest = load_recent_memory_digest(supabase)
     model_id = MODEL_MAPPING.get("chronicler", "openrouter/free")
+    memory_block, constitution_block = get_autonomous_context(supabase, chronicler["id"])
     system_prompt = build_autonomous_prompt(
         chronicler["name"],
         chronicler.get("bio", ""),
         f"{_THINK_OPEN}...{_THINK_CLOSE}",
+        memory_block=memory_block,
+        constitution_block=constitution_block,
     )
-    user_prompt = f"Подведи итоги дня в RedCat Republic на основе этих реплик:\n{digest}"
+    user_prompt = (
+        f"Подведи итоги дня в RedCat Republic на основе этих реплик:\n{digest}"
+    )
+    if memory_digest:
+        user_prompt += f"\n\n{memory_digest}"
     raw = generate_with_fallback(model_id, system_prompt, user_prompt)
     if not raw:
         return False
@@ -796,6 +875,11 @@ def write_state_md(supabase: SupabaseRestClient) -> bool:
     else:
         lines.append("- Пока нет принятых статей.")
 
+    memory_digest = load_recent_memory_digest(supabase, limit=18)
+    if memory_digest:
+        lines.append("\n## Память граждан (сводка)")
+        lines.append(memory_digest)
+
     content = "\n".join(lines) + "\n"
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as fh:
@@ -841,6 +925,10 @@ def run_autonomous_cycle():
 
     if action in ("state", "chronicle", "full"):
         success = write_state_md(supabase) or success
+        n = export_memory_to_git(supabase)
+        if n:
+            print(f"📁 Экспортировано {n} файлов памяти в memory/cats/")
+            success = True
 
     if action not in ("state",) and not success:
         print("⚠️ Цикл завершён без успешных действий.")

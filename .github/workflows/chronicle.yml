@@ -37,14 +37,14 @@ jobs:
           ORCHESTRATOR_ACTION: chronicle
         run: python orchestrator.py
 
-      - name: Commit STATE.md
+      - name: Commit STATE.md and memory export
         run: |
           git config user.name "RedCat Republic Bot"
           git config user.email "bot@users.noreply.github.com"
-          git add STATE.md
+          git add STATE.md memory/
           if git diff --staged --quiet; then
-            echo "STATE.md unchanged"
+            echo "No changes to commit"
           else
-            git commit -m "Update republic state [skip ci]"
+            git commit -m "Update republic state and cat memory [skip ci]"
             git push
           fi

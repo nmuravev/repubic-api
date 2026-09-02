@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 from typing import Callable, List, Optional
 
+from pathlib import Path
+
 from supabase_client import SupabaseRestClient
 
 MAX_MEMORY_CHARS = 2000
@@ -187,3 +189,74 @@ def process_memory_after_post(
     n = upsert_memories(supabase, citizen["id"], upserts, source_post_id=post_id)
     if n:
         print(f"🧠 Сохранено {n} фрагмент(ов) памяти для {citizen['name']}")
+
+
+def format_memory_digest(entries: List[dict], max_chars: int = 1500) -> str:
+    if not entries:
+        return ""
+    lines = ["Сводка личной памяти граждан:"]
+    total = len(lines[0])
+    for row in entries:
+        cid = row.get("citizen_id", "?")
+        path = row.get("path", "")
+        snippet = (row.get("content") or "")[:120].replace("\n", " ")
+        chunk = f"- {cid}/{path}: {snippet}"
+        if total + len(chunk) > max_chars:
+            break
+        lines.append(chunk)
+        total += len(chunk)
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def load_recent_memory_digest(supabase: SupabaseRestClient, limit: int = 24) -> str:
+    try:
+        result = (
+            supabase.table("citizen_memory")
+            .select("citizen_id,path,content,updated_at")
+            .order("updated_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return format_memory_digest(result.data or [])
+    except Exception as exc:
+        print(f"ℹ️ citizen_memory digest недоступен: {exc}")
+        return ""
+
+
+def export_memory_to_git(supabase: SupabaseRestClient, base_dir: str = "memory/cats") -> int:
+    try:
+        result = supabase.table("citizen_memory").select("*").execute()
+        rows = result.data or []
+    except Exception as exc:
+        print(f"⚠️ Экспорт памяти невозможен: {exc}")
+        return 0
+
+    if not rows:
+        return 0
+
+    base = Path(base_dir)
+    written = 0
+    for row in rows:
+        citizen_id = row.get("citizen_id")
+        path = _normalize_path(str(row.get("path", "")))
+        if not citizen_id or not path:
+            continue
+        target = base / citizen_id / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        header = (
+            f"<!-- citizen: {citizen_id} | source: {row.get('source', '')} "
+            f"| updated: {row.get('updated_at', '')} -->\n\n"
+        )
+        target.write_text(header + (row.get("content") or ""), encoding="utf-8")
+        written += 1
+
+    readme = Path("memory/README.md")
+    readme.parent.mkdir(parents=True, exist_ok=True)
+    if not readme.exists():
+        readme.write_text(
+            "# Cat memory files\n\n"
+            "Auto-exported from Supabase `citizen_memory` by the chronicler workflow.\n"
+            "Paths mirror Fable-style filesystem: `cats/{citizen_id}/{path}.md`\n",
+            encoding="utf-8",
+        )
+    return written
