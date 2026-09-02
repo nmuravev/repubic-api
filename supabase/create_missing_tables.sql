@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS public.interview_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_interview_queue_status ON public.interview_queue(status);
+CREATE INDEX IF NOT EXISTS idx_interview_queue_session ON public.interview_queue(session_id);
 CREATE INDEX IF NOT EXISTS idx_topic_suggestions_used ON public.topic_suggestions(used);
 
 ALTER TABLE public.topic_suggestions ENABLE ROW LEVEL SECURITY;
