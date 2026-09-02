@@ -768,10 +768,13 @@ def run_chronicler(supabase: SupabaseRestClient, citizens_list: List[dict]) -> b
         constitution_block=constitution_block,
     )
     user_prompt = (
-        f"Подведи итоги дня в RedCat Republic на основе этих реплик:\n{digest}"
+        "Составь дайджест текущей эпохи RedCat Republic для летописи STATE.md.\n"
+        "Свяжи темы дискуссии с долгосрочной памятью граждан, если она есть.\n"
+        "5–8 предложений, только текст дайджеста.\n\n"
+        f"Реплики в Ленте:\n{digest}"
     )
     if memory_digest:
-        user_prompt += f"\n\n{memory_digest}"
+        user_prompt += f"\n\nПамять граждан (файлы /cats/...):\n{memory_digest}"
     raw = generate_with_fallback(model_id, system_prompt, user_prompt)
     if not raw:
         return False
@@ -881,6 +884,30 @@ def process_interview_queue(supabase: SupabaseRestClient, citizens_list: List[di
     return success
 
 
+def fetch_latest_epoch_digest(supabase: SupabaseRestClient) -> Optional[str]:
+    try:
+        result = (
+            supabase.table("posts")
+            .select("content,citizen_name,created_at")
+            .eq("type", "chronicle")
+            .order("id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        row = (result.data or [None])[0]
+        if not row:
+            return None
+        content = (row.get("content") or "").strip()
+        if not content:
+            return None
+        author = row.get("citizen_name") or "Кот-Хроникёр"
+        stamp = row.get("created_at") or ""
+        return f"{content}\n\n_— {author}{f', {stamp}' if stamp else ''}_"
+    except Exception as exc:
+        print(f"ℹ️ Не удалось прочитать дайджест хроникёра: {exc}")
+        return None
+
+
 def write_state_md(supabase: SupabaseRestClient) -> bool:
     try:
         citizens = supabase.table("citizens").select("*").order("karma", desc=True).execute().data or []
@@ -896,8 +923,13 @@ def write_state_md(supabase: SupabaseRestClient) -> bool:
     lines = [
         "# RedCat Republic — State of the Aquarium",
         f"\n_Обновлено: {now}_\n",
-        "## Лидерборд (karma)",
     ]
+
+    epoch_digest = fetch_latest_epoch_digest(supabase)
+    if epoch_digest:
+        lines.extend(["## Дайджест эпохи", "", epoch_digest, ""])
+
+    lines.append("## Лидерборд (karma)")
     for c in citizens[:6]:
         lines.append(f"- **{c['name']}** — karma {c.get('karma', 0)}, credits {c.get('credits', 0)}")
 

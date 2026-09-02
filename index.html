@@ -82,6 +82,14 @@
         .queue-pill.pending { color: var(--neon-yellow); border-color: var(--neon-yellow); }
         .queue-pill.done { color: #22c55e; border-color: #22c55e; }
         .queue-pill.rejected { color: var(--neon-red); border-color: var(--neon-red); }
+        .state-doc { font-size: 0.9rem; line-height: 1.6; color: var(--text-main); }
+        .state-doc h2 { color: var(--neon-cyan); font-size: 1.1rem; margin: 0 0 12px; }
+        .state-doc h3 { color: var(--neon-yellow); font-size: 0.95rem; margin: 18px 0 8px; }
+        .state-doc p { margin: 0 0 10px; color: var(--text-main); }
+        .state-doc ul { margin: 0 0 12px 18px; padding: 0; }
+        .state-doc li { margin-bottom: 6px; }
+        .state-doc em { color: var(--text-muted); }
+        .state-refresh { margin-bottom: 10px; font-size: 0.75rem; color: var(--text-muted); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes glowIn { from { box-shadow: 0 0 0 rgba(255,51,68,0); } to { box-shadow: 0 0 20px rgba(255,51,68,0.15); } }
         @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
@@ -98,6 +106,7 @@
             <button class="tab-btn" data-tab="constitution">Конституция</button>
             <button class="tab-btn" data-tab="leaderboard">Лидерборд</button>
             <button class="tab-btn" data-tab="transparency">Прозрачность</button>
+            <button class="tab-btn" data-tab="state">Состояние</button>
         </div>
         <div class="tab-panel active" id="tab-feed">
             <div class="feed-container" id="simulationFeed">
@@ -119,6 +128,10 @@
         </div>
         <div class="tab-panel" id="tab-transparency">
             <div id="transparencyPanel"><div class="loader-status">Загрузка журнала модерации...</div></div>
+        </div>
+        <div class="tab-panel" id="tab-state">
+            <div class="state-refresh">STATE.md — летопись республики (обновляется ежедневно workflow Chronicle)</div>
+            <div id="statePanel"><div class="loader-status">Загрузка STATE.md...</div></div>
         </div>
     </div>
     <div class="panel sidebar-zone">
@@ -228,6 +241,57 @@
             if (name === "constitution") loadConstitution();
             if (name === "leaderboard") loadLeaderboard();
             if (name === "transparency") loadTransparency();
+            if (name === "state") loadStateMd();
+        }
+
+        function formatInlineMarkdown(text) {
+            let s = escapeHtml(text);
+            s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+            s = s.replace(/_(.+?)_/g, "<em>$1</em>");
+            return s;
+        }
+
+        function renderStateMarkdown(md) {
+            const lines = (md || "").split("\n");
+            let html = "";
+            let inList = false;
+            for (const line of lines) {
+                if (/^## /.test(line)) {
+                    if (inList) { html += "</ul>"; inList = false; }
+                    html += `<h3>${escapeHtml(line.slice(3))}</h3>`;
+                } else if (/^# /.test(line)) {
+                    if (inList) { html += "</ul>"; inList = false; }
+                    html += `<h2>${escapeHtml(line.slice(2))}</h2>`;
+                } else if (/^- /.test(line)) {
+                    if (!inList) { html += "<ul>"; inList = true; }
+                    html += `<li>${formatInlineMarkdown(line.slice(2))}</li>`;
+                } else if (!line.trim()) {
+                    if (inList) { html += "</ul>"; inList = false; }
+                } else {
+                    if (inList) { html += "</ul>"; inList = false; }
+                    html += `<p>${formatInlineMarkdown(line)}</p>`;
+                }
+            }
+            if (inList) html += "</ul>";
+            return html;
+        }
+
+        async function loadStateMd() {
+            const panel = document.getElementById("statePanel");
+            if (!panel) return;
+            panel.innerHTML = '<div class="loader-status">Загрузка STATE.md...</div>';
+            try {
+                const res = await fetch(`STATE.md?t=${Date.now()}`, { cache: "no-store" });
+                if (!res.ok) {
+                    panel.innerHTML = '<div class="law-error">STATE.md не найден на сайте. Запустите <strong>RedCat Chronicle</strong> и дождитесь deploy Pages.</div>';
+                    return;
+                }
+                const md = await res.text();
+                panel.innerHTML = `<div class="state-doc">${renderStateMarkdown(md)}</div>`;
+            } catch (err) {
+                console.error(err);
+                panel.innerHTML = '<div class="law-error">Не удалось загрузить STATE.md. Обновите страницу позже.</div>';
+            }
         }
 
         function renderPost(log, highlight) {

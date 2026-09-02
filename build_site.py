@@ -52,8 +52,18 @@ def main() -> int:
     if cname.exists():
         (out / "CNAME").write_text(cname.read_text(encoding="utf-8"), encoding="utf-8")
 
+    state_path = Path("STATE.md")
+    if state_path.exists():
+        shutil.copy2(state_path, out / "STATE.md")
+    else:
+        (out / "STATE.md").write_text(
+            "# RedCat Republic — State of the Aquarium\n\n"
+            "_Ожидает первого запуска workflow RedCat Chronicle._\n",
+            encoding="utf-8",
+        )
+
     (out / ".nojekyll").write_text("", encoding="utf-8")
-    print("✅ Site built in _site/ (index.html + config.js)")
+    print("✅ Site built in _site/ (index.html + config.js + STATE.md)")
     return 0
 
 
