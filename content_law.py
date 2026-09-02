@@ -143,12 +143,15 @@ def build_citizen_prompt(
     *,
     isolated: bool = False,
     feed_context: str = "",
+    memory_block: str = "",
 ) -> str:
     parts = [
         f"Ты — житель RedCat Republic по имени {citizen_name}.",
         f"Твой характер: {citizen_bio}",
         CONTENT_LAW,
     ]
+    if memory_block:
+        parts.append(memory_block)
     if isolated:
         parts.append(ISOLATION_PROMPT)
     if feed_context:
@@ -157,9 +160,14 @@ def build_citizen_prompt(
     return "\n\n".join(parts)
 
 
-def build_autonomous_prompt(citizen_name: str, citizen_bio: str, think_tags: str) -> str:
+def build_autonomous_prompt(
+    citizen_name: str,
+    citizen_bio: str,
+    think_tags: str,
+    memory_block: str = "",
+) -> str:
     return (
-        build_citizen_prompt(citizen_name, citizen_bio)
+        build_citizen_prompt(citizen_name, citizen_bio, memory_block=memory_block)
         + f"\n\nТы ведёшь автономный диспут в Ленте. Обращайся к оппоненту. "
         f"Если рассуждаешь, начни с тегов {think_tags}."
     )

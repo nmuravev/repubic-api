@@ -31,6 +31,10 @@ Realtime **не обязателен** — лента подгружается p
 
 CSV здесь не поможет — нужен именно SQL Editor (создание таблиц, не импорт строк).
 
+### Таблица памяти котов (RedCat 3.0)
+
+Выполните [`migrate_citizen_memory.sql`](migrate_citizen_memory.sql) в SQL Editor — иначе orchestrator пропустит сохранение памяти (без падения).
+
 ---
 
 Supabase **импортирует данные** через CSV (Table Editor → Import), а **схему и политики** — через SQL Editor. Это разные разделы дашборда.

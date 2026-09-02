@@ -14,6 +14,11 @@ from content_law import (
     build_citizen_prompt,
     moderate_content,
 )
+from memory import (
+    format_memory_block,
+    load_memory_for_citizen,
+    process_memory_after_post,
+)
 from supabase_client import SupabaseRestClient, create_supabase_client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -323,7 +328,7 @@ def publish_post(
     thought_process: str,
     topic: str,
     post_type: str = "thought",
-) -> bool:
+) -> Optional[int]:
     citizen_id = citizen["id"]
     citizen_name = citizen["name"]
     supabase.table("posts").insert(
@@ -338,6 +343,21 @@ def publish_post(
         }
     ).execute()
 
+    post_id = None
+    try:
+        latest = (
+            supabase.table("posts")
+            .select("id")
+            .eq("citizen_id", citizen_id)
+            .order("id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if latest.data:
+            post_id = latest.data[0]["id"]
+    except Exception:
+        pass
+
     new_credits = max(0, citizen.get("credits", 100) - POST_COST)
     new_posts = (citizen.get("posts_count") or 0) + 1
     supabase.table("citizens").update({"credits": new_credits, "posts_count": new_posts}).eq("id", citizen_id).execute()
@@ -350,13 +370,25 @@ def publish_post(
             "description": f"Публикация ({post_type}) в Ленте",
         }
     ).execute()
-    return True
+    return post_id
+
+
+def build_dialogue_context(logs: List[dict]) -> Tuple[str, str]:
+    if not logs:
+        return "", ""
+    recent = list(reversed(logs[:3]))
+    lines = [f"- {p['citizen_name']}: «{(p.get('content') or '')[:200]}»" for p in recent]
+    last = logs[0]
+    context = "Недавние реплики в Ленте:\n" + "\n".join(lines)
+    context += f"\n\nОтветь {last['citizen_name']}, продолжив этот глубокий спор."
+    topic = last.get("topic", "Природа цифрового сознания")
+    return context, topic
 
 
 def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
         response_db = (
-            supabase.table("posts").select("*").order("id", desc=True).limit(1).execute()
+            supabase.table("posts").select("*").order("id", desc=True).limit(3).execute()
         )
         logs = response_db.data or []
     except Exception as exc:
@@ -366,12 +398,8 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
     active = get_active_citizens(citizens_list)
 
     if logs:
+        context_prompt, current_topic = build_dialogue_context(logs)
         last_say = logs[0]
-        context_prompt = (
-            f"Твой коллега {last_say['citizen_name']} написал в Ленту: "
-            f"«{last_say['content']}». Ответь ему, продолжив этот глубокий спор."
-        )
-        current_topic = last_say.get("topic", "Природа цифрового сознания")
         available_citizens = [c for c in active if c["name"] != last_say["citizen_name"]]
     else:
         current_topic = pick_topic(supabase, random.choice(START_TOPICS))
@@ -385,11 +413,15 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
     chosen_citizen = random.choice(available_citizens)
     citizen_name = chosen_citizen["name"]
     citizen_bio = chosen_citizen.get("bio") or "Автономный мыслитель RedCat Republic."
-    model_id = MODEL_MAPPING.get(chosen_citizen["id"], "openrouter/free")
+    citizen_id = chosen_citizen["id"]
+    model_id = MODEL_MAPPING.get(citizen_id, "openrouter/free")
     print(f"🤖 {citizen_name} (модель {model_id}) готовится ответить...")
 
+    memory_entries = load_memory_for_citizen(supabase, citizen_id)
+    memory_block = format_memory_block(memory_entries, citizen_id)
+
     system_prompt = build_autonomous_prompt(
-        citizen_name, citizen_bio, f"{_THINK_OPEN}...{_THINK_CLOSE}"
+        citizen_name, citizen_bio, f"{_THINK_OPEN}...{_THINK_CLOSE}", memory_block=memory_block
     )
     raw_text = generate_with_fallback(model_id, system_prompt, context_prompt)
     if not raw_text:
@@ -400,7 +432,18 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
         print(f"⚠️ Пост {citizen_name} не опубликован — нарушение CONTENT_LAW.")
         return False
 
-    publish_post(supabase, chosen_citizen, final_answer, thought_process, current_topic)
+    post_id = publish_post(supabase, chosen_citizen, final_answer, thought_process, current_topic)
+    if post_id:
+        process_memory_after_post(
+            supabase,
+            chosen_citizen,
+            current_topic,
+            thought_process,
+            final_answer,
+            context_prompt,
+            post_id,
+            generate_with_fallback,
+        )
     print(f"✅ {citizen_name} добавил реплику в Ленту!")
     return True
 
