@@ -9,11 +9,12 @@ from typing import List, Optional, Tuple
 import requests
 
 from content_law import (
+    CRITIC_JUDGE_SYSTEM,
     REASON_LABELS,
     build_autonomous_prompt,
     build_citizen_prompt,
     format_constitution_block,
-    moderate_content,
+    moderate_content_detailed,
 )
 from memory import (
     export_memory_to_git,
@@ -22,6 +23,7 @@ from memory import (
     load_recent_memory_digest,
     process_memory_after_post,
 )
+from moderation import log_moderation_decision
 from supabase_client import SupabaseRestClient, create_supabase_client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -198,12 +200,47 @@ def generate_with_fallback(primary_model: str, system_prompt: str, user_prompt: 
     return None
 
 
-def ai_moderate(system_prompt: str, user_prompt: str) -> Optional[str]:
-    return generate_with_fallback("openrouter/free", system_prompt, user_prompt)
+def critic_ai_moderate(system_prompt: str, user_prompt: str) -> Optional[str]:
+    return generate_with_fallback(MODEL_MAPPING.get("critic", "openrouter/free"), system_prompt, user_prompt)
+
+
+def check_content(
+    supabase: SupabaseRestClient,
+    text: str,
+    *,
+    source_type: str,
+    citizen: Optional[dict] = None,
+    source_id: Optional[int] = None,
+) -> bool:
+    allowed, reason, method = moderate_content_detailed(
+        text,
+        ai_check=critic_ai_moderate,
+        judge_system=CRITIC_JUDGE_SYSTEM,
+    )
+    log_moderation_decision(
+        supabase,
+        allowed=allowed,
+        content=text,
+        source_type=source_type,
+        reason=reason,
+        judge_method=method,
+        citizen_id=(citizen or {}).get("id"),
+        citizen_name=(citizen or {}).get("name"),
+        source_id=source_id,
+    )
+    if not allowed:
+        label = REASON_LABELS.get(reason or "", reason or "неизвестно")
+        print(f"🚫 Кот-Критик отклонил контент ({source_type}): {label}")
+    return allowed
 
 
 def is_content_allowed(text: str) -> bool:
-    allowed, reason = moderate_content(text, ai_check=ai_moderate)
+    """Backward-compatible check without logging (prefer check_content)."""
+    allowed, reason, _method = moderate_content_detailed(
+        text,
+        ai_check=critic_ai_moderate,
+        judge_system=CRITIC_JUDGE_SYSTEM,
+    )
     if not allowed:
         label = REASON_LABELS.get(reason or "", reason or "неизвестно")
         print(f"🚫 Модерация отклонила контент: {label}")
@@ -456,7 +493,7 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
         return False
 
     thought_process, final_answer = parse_ai_response(raw_text)
-    if not is_content_allowed(final_answer):
+    if not check_content(supabase, final_answer, source_type="post", citizen=chosen_citizen):
         print(f"⚠️ Пост {citizen_name} не опубликован — нарушение CONTENT_LAW.")
         return False
 
@@ -588,7 +625,7 @@ def run_constitution_proposal(supabase: SupabaseRestClient, citizens_list: List[
         return False
 
     _, article_text = parse_ai_response(raw)
-    if not is_content_allowed(article_text):
+    if not check_content(supabase, article_text, source_type="constitution", citizen=proposer):
         return False
 
     try:
@@ -740,7 +777,7 @@ def run_chronicler(supabase: SupabaseRestClient, citizens_list: List[dict]) -> b
         return False
 
     thought_process, final_answer = parse_ai_response(raw)
-    if not is_content_allowed(final_answer):
+    if not check_content(supabase, final_answer, source_type="chronicle", citizen=chronicler):
         return False
 
     publish_post(
@@ -814,7 +851,7 @@ def process_interview_queue(supabase: SupabaseRestClient, citizens_list: List[di
             continue
 
         thought_process, answer = parse_ai_response(raw)
-        if not is_content_allowed(answer):
+        if not check_content(supabase, answer, source_type="interview", citizen=citizen):
             supabase.table("interview_queue").update({"status": "rejected"}).eq("id", item["id"]).execute()
             continue
 
