@@ -4,7 +4,7 @@ import random
 import sys
 import time
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import requests
 
@@ -67,11 +67,12 @@ DEFAULT_CITIZENS = [
     },
 ]
 
+# Only currently free OpenRouter slugs (paid-only free variants 404).
 MODEL_MAPPING = {
     "critic": "google/gemma-4-31b-it:free",
     "engineer": "poolside/laguna-xs-2.1:free",
     "mystic": "nvidia/nemotron-3-super-120b-a12b:free",
-    "philosopher": "inclusionai/ling-3.0-flash:free",
+    "philosopher": "z-ai/glm-5.2:free",
     "poet": "google/gemma-4-26b-a4b-it:free",
     "chronicler": "openrouter/free",
 }
@@ -79,8 +80,11 @@ MODEL_MAPPING = {
 FALLBACK_MODELS = [
     "openrouter/free",
     "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-nano-30b-a3b:free",
-    "inclusionai/ling-3.0-flash:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "poolside/laguna-xs-2.1:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "z-ai/glm-5.2:free",
+    "minimax/minimax-m2.7:free",
 ]
 
 START_TOPICS = [
@@ -144,7 +148,29 @@ def parse_ai_response(raw_text: str) -> Tuple[str, str]:
     return thought_process, final_answer or raw_text.strip()
 
 
-def call_openrouter(model_id: str, system_prompt: str, user_prompt: str) -> Optional[str]:
+def _unique_models(*model_ids: Optional[str]) -> List[str]:
+    seen = set()
+    ordered: List[str] = []
+    for model_id in model_ids:
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        ordered.append(model_id)
+    return ordered
+
+
+def build_model_chain(primary_model: Optional[str] = None) -> List[str]:
+    """Primary model first, then shared free fallbacks, always ending with openrouter/free."""
+    return _unique_models(primary_model, *FALLBACK_MODELS, "openrouter/free")
+
+
+def call_openrouter(
+    model_id: str,
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    route_fallbacks: Optional[List[str]] = None,
+) -> Optional[str]:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -160,18 +186,31 @@ def call_openrouter(model_id: str, system_prompt: str, user_prompt: str) -> Opti
         "max_tokens": 600,
         "temperature": 0.8,
     }
+    # OpenRouter-native failover inside one request (if the primary slug 404s).
+    extras = [m for m in (route_fallbacks or []) if m and m != model_id]
+    if extras:
+        payload["models"] = [model_id] + extras[:4]
 
-    response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
-    if response.status_code == 429:
-        print(f"⏳ Rate limit для модели {model_id}, ждём 5 сек...")
-        time.sleep(5)
+    try:
         response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
+        if response.status_code == 429:
+            print(f"⏳ Rate limit для модели {model_id}, ждём 5 сек...")
+            time.sleep(5)
+            response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
+    except requests.RequestException as exc:
+        print(f"⚠️ Сеть OpenRouter ({model_id}): {exc}")
+        return None
 
     if not response.ok:
         print(f"❌ OpenRouter HTTP {response.status_code} ({model_id}): {response.text[:300]}")
         return None
 
-    res_json = response.json()
+    try:
+        res_json = response.json()
+    except ValueError:
+        print(f"❌ OpenRouter вернул не-JSON ({model_id}): {response.text[:200]}")
+        return None
+
     if "error" in res_json:
         print(f"❌ OpenRouter error ({model_id}): {res_json['error']}")
         return None
@@ -186,18 +225,43 @@ def call_openrouter(model_id: str, system_prompt: str, user_prompt: str) -> Opti
         print(f"❌ Нет content в ответе ({model_id}): {res_json}")
         return None
 
+    used = (res_json.get("model") or model_id)
+    if used != model_id:
+        print(f"↪️ OpenRouter переключил {model_id} → {used}")
     return content
 
 
-def generate_with_fallback(primary_model: str, system_prompt: str, user_prompt: str) -> Optional[str]:
-    models = [primary_model] + [m for m in FALLBACK_MODELS if m != primary_model]
-    for model_id in models:
+def generate_with_fallback(
+    primary_model: Optional[str],
+    system_prompt: str,
+    user_prompt: str,
+) -> Optional[str]:
+    """Try primary + free fallbacks until one model answers. Never raises on 404."""
+    models = build_model_chain(primary_model)
+    for index, model_id in enumerate(models):
         print(f"🔄 Пробуем модель: {model_id}")
-        result = call_openrouter(model_id, system_prompt, user_prompt)
+        remaining = models[index + 1 :]
+        result = call_openrouter(
+            model_id,
+            system_prompt,
+            user_prompt,
+            route_fallbacks=remaining,
+        )
         if result:
             print(f"✅ Успех с моделью: {model_id}")
             return result
+        print(f"↪️ Модель недоступна, берём следующую...")
+    print("❌ Все free-модели OpenRouter недоступны в этом цикле.")
     return None
+
+
+def make_ai_generate(primary_model: Optional[str] = None) -> Callable[[str, str], Optional[str]]:
+    """2-arg callback for memory/moderation: (system, user) -> text."""
+
+    def _generate(system_prompt: str, user_prompt: str) -> Optional[str]:
+        return generate_with_fallback(primary_model, system_prompt, user_prompt)
+
+    return _generate
 
 
 def critic_ai_moderate(system_prompt: str, user_prompt: str) -> Optional[str]:
@@ -499,16 +563,19 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
 
     post_id = publish_post(supabase, chosen_citizen, final_answer, thought_process, current_topic)
     if post_id:
-        process_memory_after_post(
-            supabase,
-            chosen_citizen,
-            current_topic,
-            thought_process,
-            final_answer,
-            context_prompt,
-            post_id,
-            generate_with_fallback,
-        )
+        try:
+            process_memory_after_post(
+                supabase,
+                chosen_citizen,
+                current_topic,
+                thought_process,
+                final_answer,
+                context_prompt,
+                post_id,
+                make_ai_generate(model_id),
+            )
+        except Exception as exc:
+            print(f"⚠️ Память после поста не сохранена: {exc}")
     print(f"✅ {citizen_name} добавил реплику в Ленту!")
     return True
 
@@ -867,16 +934,19 @@ def process_interview_queue(supabase: SupabaseRestClient, citizens_list: List[di
                 "agent_response": answer,
             }
         ).execute()
-        process_memory_after_post(
-            supabase,
-            citizen,
-            "интервью с наблюдателем",
-            thought_process,
-            answer,
-            item["user_question"],
-            None,
-            generate_with_fallback,
-        )
+        try:
+            process_memory_after_post(
+                supabase,
+                citizen,
+                "интервью с наблюдателем",
+                thought_process,
+                answer,
+                item["user_question"],
+                None,
+                make_ai_generate(MODEL_MAPPING.get(citizen["id"], "openrouter/free")),
+            )
+        except Exception as exc:
+            print(f"⚠️ Память после интервью не сохранена: {exc}")
         supabase.table("interview_queue").update({"status": "done"}).eq("id", item["id"]).execute()
         print(f"💬 Ответ в interview_queue #{item['id']} от {citizen['name']}")
         success = True
