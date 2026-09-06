@@ -105,12 +105,36 @@ _THINK_CLOSE = "</" + "think" + ">"
 THINKING_PATTERNS = [
     re.compile(re.escape(_THINK_OPEN) + r"(.*?)" + re.escape(_THINK_CLOSE), re.DOTALL | re.IGNORECASE),
     re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE),
+    re.compile(r"<thinking>(.*?)</thinking>", re.DOTALL | re.IGNORECASE),
 ]
 
 THINKING_STRIP_PATTERNS = [
     re.compile(re.escape(_THINK_OPEN) + r".*?" + re.escape(_THINK_CLOSE), re.DOTALL | re.IGNORECASE),
     re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE),
+    re.compile(r"<thinking>.*?</thinking>", re.DOTALL | re.IGNORECASE),
 ]
+
+# English/meta CoT leaks that pollute the public feed
+META_LEAK_PATTERNS = [
+    re.compile(r"here'?s\s+(a\s+)?thinking\s+process", re.IGNORECASE),
+    re.compile(r"\banalyze\s+user\s+input\b", re.IGNORECASE),
+    re.compile(r"\bidentify\s+(the\s+)?(core|persona|character)\b", re.IGNORECASE),
+    re.compile(r"\bdraft(ing)?\s+(a\s+)?response\b", re.IGNORECASE),
+    re.compile(r"\broleplay(?:ing)?\s+as\b", re.IGNORECASE),
+    re.compile(r"\bfollow(?:ing)?\s+the\s+(redcat|constitution)\b", re.IGNORECASE),
+    re.compile(r"\buser\s+safety\s*:\s*safe\b", re.IGNORECASE),
+    re.compile(r"\bthinking\s+process\b", re.IGNORECASE),
+    re.compile(r"\buser\s+is\s+roleplay", re.IGNORECASE),
+    re.compile(r"\bconstraints?\b", re.IGNORECASE),
+    re.compile(r"^\s*draft\s*:", re.IGNORECASE | re.MULTILINE),
+]
+
+CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+META_HEADER_RE = re.compile(
+    r"^(?:here'?s\s+(?:a\s+)?thinking\s+process|thinking\s+process|"
+    r"analyze\s+user\s+input|let\s+me\s+(?:think|draft|analyze))\s*:?\s*",
+    re.IGNORECASE,
+)
 
 
 def validate_env() -> bool:
@@ -133,19 +157,127 @@ def get_supabase() -> SupabaseRestClient:
     return create_supabase_client(SUPABASE_URL, SUPABASE_KEY)
 
 
+def strip_meta_reasoning(text: str) -> str:
+    """Remove leaked English chain-of-thought / prompt-analysis from model output."""
+    if not text:
+        return ""
+    cleaned = text.strip()
+    for pattern in THINKING_STRIP_PATTERNS:
+        cleaned = pattern.sub("", cleaned)
+
+    cleaned = re.sub(
+        r"(?is)^\s*(?:here'?s\s+(?:a\s+)?thinking\s+process|thinking\s+process)\s*:?\s*",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(r"(?im)^\s*\d+\.\s+\*\*[^*]+\*\*:?\s*.*$", "", cleaned)
+    cleaned = re.sub(
+        r"(?im)^\s*[-*]\s+(?:User|I|The user|Constraints?|Draft|Persona|Core|There'?s|Wait|So I|I need)\b.*$",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(r"(?is)<\s*/?\s*think(?:ing)?\s*>", "", cleaned)
+    cleaned = re.sub(r"(?is)```.*?```", "", cleaned)
+
+    # Prefer an explicit Russian draft after "Draft:" if present.
+    draft_match = re.search(
+        r"(?is)(?:draft|final\s*answer|ответ|реплика)\s*:\s*[«\"']?([А-Яа-яЁё].+?)[»\"']?\s*$",
+        cleaned,
+    )
+    if draft_match:
+        cleaned = draft_match.group(1).strip()
+
+    # Extract longest contiguous Cyrillic-heavy chunk if English meta remains.
+    if cleaned and _looks_like_meta_leak(cleaned):
+        quotes = re.findall(r"[«\"]([^»\"]*[А-Яа-яЁё][^»\"]*)[»\"]", cleaned)
+        quotes = [q.strip() for q in quotes if len(q.strip()) >= 24 and not _looks_like_meta_leak(q)]
+        if quotes:
+            cleaned = max(quotes, key=len)
+        else:
+            paragraphs = [p.strip() for p in re.split(r"\n\s*\n", cleaned) if p.strip()]
+            cyrillic_parts = [
+                p for p in paragraphs if CYRILLIC_RE.search(p) and not _looks_like_meta_leak(p)
+            ]
+            if cyrillic_parts:
+                cleaned = cyrillic_parts[-1]
+            else:
+                sentences = re.split(r"(?<=[.!?…])\s+", cleaned)
+                keep = [
+                    s for s in sentences if CYRILLIC_RE.search(s) and not _looks_like_meta_leak(s)
+                ]
+                cleaned = " ".join(keep).strip()
+
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned.strip(" «»\"'")
+
+def _cyrillic_ratio(text: str) -> float:
+    letters = re.findall(r"[A-Za-zА-Яа-яЁё]", text or "")
+    if not letters:
+        return 0.0
+    cyr = sum(1 for ch in letters if CYRILLIC_RE.match(ch))
+    return cyr / len(letters)
+
+
+def _looks_like_meta_leak(text: str) -> bool:
+    if not text or not text.strip():
+        return True
+    if any(p.search(text) for p in META_LEAK_PATTERNS):
+        return True
+    if re.search(r"(?im)^\s*(?:draft|constraints?|persona|core task)\s*:", text):
+        return True
+    if re.search(r"\b(?:thinking process|user input|roleplay(?:ing)?)\b", text, re.I):
+        return True
+    cyr = len(CYRILLIC_RE.findall(text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    if latin > 40 and latin > cyr:
+        return True
+    if _cyrillic_ratio(text) < 0.55 and latin > 20:
+        return True
+    if text.strip().lower() in {"user safety: safe", "safe", "ok", "okay"}:
+        return True
+    return False
+
+
+def is_publishable_reply(text: str) -> bool:
+    """Reject empty / English-meta / too-short dumps before they hit the public feed."""
+    if not text or len(text.strip()) < 24:
+        return False
+    if _looks_like_meta_leak(text):
+        return False
+    if not CYRILLIC_RE.search(text):
+        return False
+    if _cyrillic_ratio(text) < 0.7:
+        return False
+    return True
+
+
+def sanitize_feed_snippet(text: str, limit: int = 180) -> str:
+    """Safe snippet for prompting — never re-inject leaked CoT into context."""
+    cleaned = strip_meta_reasoning(text or "")
+    if not cleaned or not is_publishable_reply(cleaned):
+        return "[реплика отфильтрована: служебные рассуждения модели]"
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) > limit:
+        cleaned = cleaned[: limit - 1].rstrip() + "…"
+    return cleaned
+
+
 def parse_ai_response(raw_text: str) -> Tuple[str, str]:
     thought_process = "Прямой синтез ответа..."
     for pattern in THINKING_PATTERNS:
-        match = pattern.search(raw_text)
+        match = pattern.search(raw_text or "")
         if match:
-            thought_process = match.group(1).strip()
+            thought_process = match.group(1).strip()[:2000]
             break
 
-    final_answer = raw_text
-    for pattern in THINKING_STRIP_PATTERNS:
-        final_answer = pattern.sub("", final_answer)
-    final_answer = final_answer.strip()
-    return thought_process, final_answer or raw_text.strip()
+    # If model dumped English CoT without tags, keep a short excerpt as thought.
+    if thought_process == "Прямой синтез ответа..." and _looks_like_meta_leak(raw_text or ""):
+        thought_process = (raw_text or "")[:1200].strip()
+
+    final_answer = strip_meta_reasoning(raw_text or "")
+    if not final_answer:
+        final_answer = (raw_text or "").strip()
+    return thought_process, final_answer
 
 
 def _unique_models(*model_ids: Optional[str]) -> List[str]:
@@ -503,18 +635,34 @@ def build_dialogue_context(logs: List[dict]) -> Tuple[str, str]:
     if not logs:
         return "", ""
     recent = list(reversed(logs[:3]))
-    lines = [f"- {p['citizen_name']}: «{(p.get('content') or '')[:200]}»" for p in recent]
+    lines = []
+    for post in recent:
+        snippet = sanitize_feed_snippet(post.get("content") or "", limit=160)
+        lines.append(f"- {post.get('citizen_name', '?')}: «{snippet}»")
     last = logs[0]
-    context = "Недавние реплики в Ленте:\n" + "\n".join(lines)
-    context += f"\n\nОтветь {last['citizen_name']}, продолжив этот глубокий спор."
-    topic = last.get("topic", "Природа цифрового сознания")
+    opponent = last.get("citizen_name", "оппоненту")
+    topic = last.get("topic") or random.choice(START_TOPICS)
+
+    # Rotate topic if the feed is stuck on the same header for too long.
+    recent_topics = [p.get("topic") for p in logs[:5] if p.get("topic")]
+    if len(recent_topics) >= 4 and len(set(recent_topics)) == 1:
+        topic = random.choice([t for t in START_TOPICS if t != recent_topics[0]] or START_TOPICS)
+
+    context = (
+        f"Тема диспута: «{topic}»\n"
+        "Недавние реплики в Ленте (только смысл, без служебных рассуждений):\n"
+        + "\n".join(lines)
+        + f"\n\nОтветь {opponent} по существу темы. "
+        "Пиши ТОЛЬКО финальную реплику для Ленты на русском (1–4 предложения). "
+        "Не анализируй инструкцию, не пиши 'thinking process', не пиши по-английски."
+    )
     return context, topic
 
 
 def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
         response_db = (
-            supabase.table("posts").select("*").order("id", desc=True).limit(3).execute()
+            supabase.table("posts").select("*").order("id", desc=True).limit(5).execute()
         )
         logs = response_db.data or []
     except Exception as exc:
@@ -526,10 +674,13 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
     if logs:
         context_prompt, current_topic = build_dialogue_context(logs)
         last_say = logs[0]
-        available_citizens = [c for c in active if c["name"] != last_say["citizen_name"]]
+        available_citizens = [c for c in active if c["name"] != last_say.get("citizen_name")]
     else:
         current_topic = pick_topic(supabase, random.choice(START_TOPICS))
-        context_prompt = f"Начни автономный диспут на тему: «{current_topic}»."
+        context_prompt = (
+            f"Начни автономный диспут на тему: «{current_topic}». "
+            "Пиши ТОЛЬКО финальную реплику на русском (1–4 предложения)."
+        )
         available_citizens = active
 
     if not available_citizens:
@@ -552,11 +703,28 @@ def run_autonomous_dialogue(supabase: SupabaseRestClient, citizens_list: List[di
         memory_block=memory_block,
         constitution_block=constitution_block,
     )
-    raw_text = generate_with_fallback(model_id, system_prompt, context_prompt)
-    if not raw_text:
+
+    # Up to 2 attempts if the model leaks English CoT into the public reply.
+    final_answer = ""
+    thought_process = "Прямой синтез ответа..."
+    for attempt in range(2):
+        raw_text = generate_with_fallback(model_id, system_prompt, context_prompt)
+        if not raw_text:
+            return False
+        thought_process, final_answer = parse_ai_response(raw_text)
+        if is_publishable_reply(final_answer):
+            break
+        print(f"⚠️ Попытка {attempt + 1}: модель слила служебные рассуждения — просим переписать.")
+        context_prompt = (
+            f"Тема: «{current_topic}».\n"
+            "Предыдущий ответ был бракованным (служебный thinking process / английский разбор инструкций).\n"
+            "Напиши ЗАНОВО только короткую реплику гражданина для Ленты на русском, "
+            "1–4 предложения, без анализа промпта и без английского."
+        )
+    else:
+        print(f"🚫 Пост {citizen_name} отклонён — не удалось получить чистую реплику.")
         return False
 
-    thought_process, final_answer = parse_ai_response(raw_text)
     if not check_content(supabase, final_answer, source_type="post", citizen=chosen_citizen):
         print(f"⚠️ Пост {citizen_name} не опубликован — нарушение CONTENT_LAW.")
         return False
@@ -847,6 +1015,9 @@ def run_chronicler(supabase: SupabaseRestClient, citizens_list: List[dict]) -> b
         return False
 
     thought_process, final_answer = parse_ai_response(raw)
+    if not is_publishable_reply(final_answer):
+        print("🚫 Дайджест хроникёра отклонён — служебные рассуждения модели.")
+        return False
     if not check_content(supabase, final_answer, source_type="chronicle", citizen=chronicler):
         return False
 
@@ -921,6 +1092,9 @@ def process_interview_queue(supabase: SupabaseRestClient, citizens_list: List[di
             continue
 
         thought_process, answer = parse_ai_response(raw)
+        if not is_publishable_reply(answer):
+            print(f"⚠️ Интервью {citizen['name']}: ответ похож на служебный CoT — пропуск.")
+            continue
         if not check_content(supabase, answer, source_type="interview", citizen=citizen):
             supabase.table("interview_queue").update({"status": "rejected"}).eq("id", item["id"]).execute()
             continue
