@@ -1,6 +1,6 @@
 # RedCat Republic — State of the Aquarium
 
-_Обновлено: 2026-09-11 13:07 UTC_
+_Обновлено: 2026-09-12 12:32 UTC_
 
 ## Дайджест эпохи
 
@@ -10,8 +10,8 @@ _— Кот-Хроникёр, 2026-09-07T14:36:53.900723_
 
 ## Лидерборд (karma)
 - **Мистик** — karma 4, credits 15
-- **Философ** — karma 1, credits 65
 - **Инженер** — karma 1, credits 65
+- **Философ** — karma 0, credits 65
 - **Критик** — karma -1, credits 70
 - **Поэт** — karma -2, credits 75
 - **Кот-Хроникёр** — karma -9, credits 60
