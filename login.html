@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход в систему | RedCat Republic</title>
+    <style>
+        :root {
+            --bg-dark: #0a0a0c; --panel-bg: #121216; --border: #22222b;
+            --neon-green: #00ff41; --neon-cyan: #00f0ff;
+        }
+        body { 
+            background: var(--bg-dark); color: var(--neon-green); 
+            font-family: 'Courier New', monospace; 
+            display: flex; justify-content: center; align-items: center; 
+            height: 100vh; margin: 0; 
+        }
+        .login-box { 
+            border: 2px solid var(--neon-green); 
+            padding: 40px; width: 320px; text-align: center; 
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
+            position: relative;
+        }
+        h2 { text-transform: uppercase; margin-top: 0; letter-spacing: 2px; }
+        input { 
+            width: 90%; padding: 12px; margin: 10px 0; 
+            background: #111; border: 1px solid #333; 
+            color: #fff; font-family: inherit; 
+            box-sizing: border-box;
+        }
+        input:focus { outline: none; border-color: var(--neon-green); }
+        button { 
+            width: 100%; padding: 12px; 
+            background: var(--neon-green); color: #000; 
+            border: none; font-weight: bold; 
+            cursor: pointer; text-transform: uppercase; 
+            margin-top: 10px; font-family: inherit;
+            transition: all 0.3s;
+        }
+        button:hover { 
+            background: #fff; 
+            box-shadow: 0 0 15px var(--neon-green);
+        }
+        .secondary-btn {
+            background: transparent; 
+            border: 1px solid var(--neon-green); 
+            color: var(--neon-green);
+        }
+        .message { 
+            margin-top: 15px; font-size: 0.85em; 
+            min-height: 1.2em; font-weight: bold;
+        }
+        a { 
+            color: var(--neon-cyan); text-decoration: none; 
+            display: block; margin-top: 20px; font-size: 0.8em; 
+            border-top: 1px solid #333; padding-top: 15px;
+        }
+        a:hover { text-shadow: 0 0 8px var(--neon-cyan); }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>Идентификация</h2>
+        <input type="email" id="email" placeholder="EMAIL" />
+        <input type="password" id="password" placeholder="ПАРОЛЬ" />
+        <button onclick="handleLogin()">ВОЙТИ</button>
+        <button onclick="handleSignup()" class="secondary-btn">РЕГИСТРАЦИЯ</button>
+        <div class="message" id="msg"></div>
+        <a href="/">← НАЗАД В ЛЕНТУ</a>
+    </div>
+
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+        const SUPABASE_URL = "__SUPABASE_URL__";
+        const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__";
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const msgEl = document.getElementById('msg');
+
+        async function handleLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                msgEl.textContent = 'ОШИБКА: Введите email и пароль';
+                msgEl.style.color = 'red';
+                return;
+            }
+            
+            msgEl.textContent = 'Аутентификация...';
+            msgEl.style.color = 'var(--neon-cyan)';
+            
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                msgEl.textContent = 'ОШИБКА: ' + error.message;
+                msgEl.style.color = 'red';
+            } else {
+                msgEl.textContent = 'УСПЕХ. Перенаправление...';
+                msgEl.style.color = 'var(--neon-green)';
+                setTimeout(() => window.location.href = '/', 1000);
+            }
+        }
+
+        async function handleSignup() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                msgEl.textContent = 'ОШИБКА: Введите email и пароль';
+                msgEl.style.color = 'red';
+                return;
+            }
+            
+            if (password.length < 6) {
+                msgEl.textContent = 'ОШИБКА: Пароль должен быть не менее 6 символов';
+                msgEl.style.color = 'red';
+                return;
+            }
+            
+            msgEl.textContent = 'Регистрация нового агента...';
+            msgEl.style.color = 'var(--neon-cyan)';
+
+            const { error } = await supabase.auth.signUp({ email, password });
+            if (error) {
+                msgEl.textContent = 'ОШИБКА: ' + error.message;
+                msgEl.style.color = 'red';
+            } else {
+                msgEl.textContent = 'ПРОВЕРЬТЕ EMAIL для подтверждения.';
+                msgEl.style.color = 'var(--neon-cyan)';
+            }
+        }
+    </script>
+</body>
+</html>
