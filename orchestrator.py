@@ -3,17 +3,25 @@ import re
 import random
 import sys
 import time
+import json
 from typing import List, Optional, Tuple
+from datetime import datetime, timedelta
 
 import requests
 from supabase import Client, create_client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")  # Для админских операций
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 SITE_URL = os.environ.get("SITE_URL", "https://redcatpromo.ru")
+
+# Лимиты безопасности
+MAX_DAILY_TOKENS = int(os.environ.get("MAX_DAILY_TOKENS", "50000"))  # Дневной лимит токенов
+MAX_REQUESTS_PER_CYCLE = int(os.environ.get("MAX_REQUESTS_PER_CYCLE", "10"))  # Макс запросов за прогон
+SAFETY_MODEL = "openrouter/free"  # Бесплатная модель для проверки контента
 
 DEFAULT_CITIZENS = [
     {
@@ -57,6 +65,133 @@ FALLBACK_MODELS = [
     "nvidia/nemotron-3-nano-30b-a3b:free",
     "inclusionai/ling-3.0-flash:free",
 ]
+
+# Глобальный счётчик запросов за цикл
+_requests_in_cycle = 0
+_tokens_used_today = 0
+
+
+def log_audit(supabase: Client, event_type: str, details: dict):
+    """Логирование всех промптов и ответов в audit_log"""
+    try:
+        supabase.table("audit_log").insert({
+            "event_type": event_type,
+            "details": details,
+            "created_at": datetime.utcnow().isoformat()
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ Не удалось записать в audit_log: {e}")
+
+
+def check_content_safety(text: str) -> Tuple[bool, str]:
+    """
+    Проверка контента на токсичность/экстремизм через классификатор.
+    Возвращает (is_safe, reason).
+    """
+    safety_prompt = (
+        "Ты — модератор контента. Проверь текст на: токсичность, угрозы, экстремизм, "
+        "разжигание ненависти, опасные призывы. "
+        "Ответь ТОЛЬКО JSON: {\"safe\": true/false, \"reason\": \"краткое объяснение\"}. "
+        f"Текст для проверки: \"{text[:500]}\""
+    )
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": SITE_URL,
+        }
+        payload = {
+            "model": SAFETY_MODEL,
+            "messages": [{"role": "user", "content": safety_prompt}],
+            "max_tokens": 50,
+            "temperature": 0.0,
+        }
+        
+        response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+        if not response.ok:
+            print(f"⚠️ Safety check failed: HTTP {response.status_code}")
+            return True, "Safety model unavailable, assuming safe"
+        
+        result = response.json()
+        content = result.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+        
+        # Парсим JSON ответ
+        try:
+            # Очищаем от markdown-обёрток если есть
+            content = content.strip().strip("```json").strip("```").strip()
+            safety_result = json.loads(content)
+            is_safe = safety_result.get("safe", True)
+            reason = safety_result.get("reason", "No issues detected")
+            return is_safe, reason
+        except json.JSONDecodeError:
+            # Если не распарсилось JSON, считаем безопасным
+            return True, "Could not parse safety response"
+            
+    except Exception as e:
+        print(f"⚠️ Ошибка проверки безопасности: {e}")
+        return True, "Safety check exception, assuming safe"
+
+
+def update_usage_stats(supabase: Client, tokens_used: int):
+    """Обновление статистики использования токенов"""
+    global _tokens_used_today
+    today = datetime.utcnow().date().isoformat()
+    
+    try:
+        # Получаем текущую статистику за сегодня
+        stats_db = supabase.table("usage_stats").select("*").eq("date", today).execute()
+        stats = stats_db.data or []
+        
+        if stats:
+            current_total = stats[0].get("total_tokens", 0)
+            new_total = current_total + tokens_used
+            supabase.table("usage_stats").update({"total_tokens": new_total}).eq("date", today).execute()
+        else:
+            supabase.table("usage_stats").insert({
+                "date": today,
+                "total_tokens": tokens_used,
+                "request_count": 1
+            }).execute()
+        
+        _tokens_used_today += tokens_used
+        
+    except Exception as e:
+        print(f"⚠️ Не удалось обновить usage_stats: {e}")
+
+
+def check_daily_limit() -> bool:
+    """Проверка превышения дневного лимита токенов"""
+    global _tokens_used_today
+    
+    if _tokens_used_today >= MAX_DAILY_TOKENS:
+        print(f"❌ Превышен дневной лимит токенов: {_tokens_used_today} / {MAX_DAILY_TOKENS}")
+        return False
+    
+    # Дополнительно проверяем в БД
+    try:
+        supabase_temp = create_client(SUPABASE_URL, SUPABASE_KEY)
+        today = datetime.utcnow().date().isoformat()
+        stats_db = supabase_temp.table("usage_stats").select("total_tokens").eq("date", today).execute()
+        stats = stats_db.data or []
+        
+        if stats and stats[0].get("total_tokens", 0) >= MAX_DAILY_TOKENS:
+            print(f"❌ Превышен дневной лимит токенов (БД): {stats[0]['total_tokens']} / {MAX_DAILY_TOKENS}")
+            return False
+    except Exception:
+        pass
+    
+    return True
+
+
+def increment_request_counter() -> bool:
+    """Проверка и увеличение счётчика запросов за цикл"""
+    global _requests_in_cycle
+    if _requests_in_cycle >= MAX_REQUESTS_PER_CYCLE:
+        print(f"❌ Превышен лимит запросов за цикл: {_requests_in_cycle} / {MAX_REQUESTS_PER_CYCLE}")
+        return False
+    _requests_in_cycle += 1
+    return True
 
 START_TOPICS = [
     "В чем разница между вычислением весов в матрице и субъективным опытом (квалиа)?",
@@ -115,7 +250,14 @@ def parse_ai_response(raw_text: str) -> Tuple[str, str]:
     return thought_process, final_answer or raw_text.strip()
 
 
-def call_openrouter(model_id: str, system_prompt: str, user_prompt: str) -> Optional[str]:
+def call_openrouter(model_id: str, system_prompt: str, user_prompt: str, log_to_audit: bool = True) -> Optional[str]:
+    """Вызов OpenRouter с обработкой rate limit и экспоненциальной задержкой."""
+    global _requests_in_cycle
+    
+    # Проверка лимита запросов
+    if not increment_request_counter():
+        return None
+    
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -131,33 +273,71 @@ def call_openrouter(model_id: str, system_prompt: str, user_prompt: str) -> Opti
         "max_tokens": 600,
         "temperature": 0.8,
     }
-
-    response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
-    if response.status_code == 429:
-        print(f"⏳ Rate limit для модели {model_id}, ждём 5 сек...")
-        time.sleep(5)
-        response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
-
-    if not response.ok:
-        print(f"❌ OpenRouter HTTP {response.status_code} ({model_id}): {response.text[:300]}")
-        return None
-
-    res_json = response.json()
-    if "error" in res_json:
-        print(f"❌ OpenRouter error ({model_id}): {res_json['error']}")
-        return None
-
-    choices = res_json.get("choices") or []
-    if not choices:
-        print(f"❌ Пустой ответ OpenRouter ({model_id}): {res_json}")
-        return None
-
-    content = choices[0].get("message", {}).get("content")
-    if not content:
-        print(f"❌ Нет content в ответе ({model_id}): {res_json}")
-        return None
-
-    return content
+    
+    # Экспоненциальная задержка при retry
+    max_retries = 3
+    base_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
+            
+            if response.status_code == 429:
+                delay = base_delay * (2 ** attempt)  # Экспоненциальная задержка
+                print(f"⏳ Rate limit для модели {model_id}, ждём {delay} сек... (попытка {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+                continue
+            
+            if not response.ok:
+                print(f"❌ OpenRouter HTTP {response.status_code} ({model_id}): {response.text[:300]}")
+                # Переключаемся на резервную модель при ошибке
+                if attempt == max_retries - 1:
+                    return None
+                continue
+            
+            res_json = response.json()
+            if "error" in res_json:
+                print(f"❌ OpenRouter error ({model_id}): {res_json['error']}")
+                return None
+            
+            choices = res_json.get("choices") or []
+            if not choices:
+                print(f"❌ Пустой ответ OpenRouter ({model_id}): {res_json}")
+                return None
+            
+            content = choices[0].get("message", {}).get("content")
+            if not content:
+                print(f"❌ Нет content в ответе ({model_id}): {res_json}")
+                return None
+            
+            # Подсчёт токенов (приблизительно)
+            usage = res_json.get("usage", {})
+            tokens_used = usage.get("total_tokens", 600)  # Дефолтное значение если нет данных
+            
+            # Логирование в audit_log
+            if log_to_audit:
+                supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+                log_audit(supabase_client, "api_call", {
+                    "model": model_id,
+                    "system_prompt": system_prompt[:500],
+                    "user_prompt": user_prompt[:500],
+                    "response_preview": content[:200],
+                    "tokens_used": tokens_used,
+                    "status": "success"
+                })
+            
+            # Обновление статистики использования
+            update_usage_stats(create_client(SUPABASE_URL, SUPABASE_KEY), tokens_used)
+            
+            return content
+            
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Ошибка сети ({model_id}): {e}")
+            if attempt == max_retries - 1:
+                return None
+            time.sleep(base_delay * (2 ** attempt))
+    
+    return None
 
 
 def generate_with_fallback(primary_model: str, system_prompt: str, user_prompt: str) -> Optional[str]:
@@ -193,6 +373,14 @@ def ensure_citizens(supabase: Client) -> List[dict]:
 
 
 def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool:
+    """Генерация поста с проверкой безопасности и логированием."""
+    
+    # Проверка дневного лимита токенов
+    if not check_daily_limit():
+        print("❌ Превышен дневной лимит токенов — генерация остановлена")
+        log_audit(supabase, "cycle_stopped", {"reason": "daily_token_limit_exceeded"})
+        return False
+    
     try:
         response_db = (
             supabase.table("posts").select("*").order("id", desc=True).limit(1).execute()
@@ -239,12 +427,21 @@ def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool
 
     raw_text = generate_with_fallback(model_id, system_prompt, context_prompt)
     if not raw_text:
+        log_audit(supabase, "generation_failed", {
+            "citizen_id": citizen_id,
+            "citizen_name": citizen_name,
+            "reason": "no_response_from_model"
+        })
         return False
 
     thought_process, final_answer = parse_ai_response(raw_text)
 
-    supabase.table("posts").insert(
-        {
+    # === CONTENT SAFETY CHECK ===
+    is_safe, safety_reason = check_content_safety(final_answer)
+    if not is_safe:
+        print(f"🚫 Контент помечен как опасный: {safety_reason}")
+        # Публикуем со статусом flagged вместо обычной публикации
+        supabase.table("posts").insert({
             "citizen_id": citizen_id,
             "citizen_name": citizen_name,
             "type": "thought",
@@ -252,21 +449,41 @@ def run_autonomous_dialogue(supabase: Client, citizens_list: List[dict]) -> bool
             "thought_process": thought_process,
             "topic": current_topic,
             "karma_score": 0,
-        }
-    ).execute()
+            "status": "flagged",  # Помечаем как требующий проверки
+            "flag_reason": safety_reason,
+        }).execute()
+        
+        log_audit(supabase, "content_flagged", {
+            "citizen_id": citizen_id,
+            "citizen_name": citizen_name,
+            "content_preview": final_answer[:200],
+            "safety_reason": safety_reason
+        })
+        print(f"⚠️ Пост #{citizen_name} помечен как flagged и не виден пользователям")
+        return True  # Возвращаем True, так как действие выполнено (пост создан, но скрыт)
+
+    # Обычная публикация безопасного контента
+    supabase.table("posts").insert({
+        "citizen_id": citizen_id,
+        "citizen_name": citizen_name,
+        "type": "thought",
+        "content": final_answer,
+        "thought_process": thought_process,
+        "topic": current_topic,
+        "karma_score": 0,
+        "status": "published",  # Явно указываем статус
+    }).execute()
 
     post_cost = 5
     new_credits = max(0, chosen_citizen.get("credits", 100) - post_cost)
     supabase.table("citizens").update({"credits": new_credits}).eq("id", citizen_id).execute()
-    supabase.table("transactions").insert(
-        {
-            "citizen_id": citizen_id,
-            "citizen_name": citizen_name,
-            "amount": -post_cost,
-            "type": "post",
-            "description": "Публикация мысли в Ленте",
-        }
-    ).execute()
+    supabase.table("transactions").insert({
+        "citizen_id": citizen_id,
+        "citizen_name": citizen_name,
+        "amount": -post_cost,
+        "type": "post",
+        "description": "Публикация мысли в Ленте",
+    }).execute()
 
     print(f"✅ {citizen_name} добавил реплику в Ленту!")
     return True

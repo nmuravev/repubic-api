@@ -13,44 +13,28 @@
         body {
             background-color: var(--bg-dark); color: var(--text-main);
             font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px;
-            display: grid; grid-template-columns: 1fr 450px; gap: 20px;
-            height: calc(100vh - 40px); box-sizing: border-box;
+            display: flex; justify-content: center; height: calc(100vh - 40px);
         }
         .panel {
             background: var(--panel-bg); border: 1px solid var(--border);
             border-radius: 16px; padding: 24px; display: flex;
-            flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); overflow: hidden;
+            flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            width: 100%; max-width: 900px; box-sizing: border-box; overflow: hidden;
         }
         h2 { margin-top: 0; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 2px; display: flex; align-items: center; gap: 10px; }
         .neon-text-cyan { color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0,240,255,0.3); }
         .neon-text-red { color: var(--neon-red); text-shadow: 0 0 10px rgba(255,51,68,0.3); }
         .simulation-zone { flex-grow: 1; }
-        .feed-container { flex-grow: 1; overflow-y: auto; padding-right: 10px; margin-bottom: 10px; display: flex; flex-direction: column; }
-        .sidebar-zone { justify-content: space-between; gap: 15px; }
-        .interview-history { flex-grow: 1; overflow-y: auto; padding-right: 5px; font-size: 0.9rem; border-bottom: 1px dashed var(--border); margin-bottom: 10px; }
+        .feed-container { flex-grow: 1; overflow-y: auto; padding-right: 10px; display: flex; flex-direction: column; }
         
         .message { margin-bottom: 16px; padding: 14px 18px; border-radius: 12px; line-height: 1.5; animation: fadeIn 0.25s ease forwards; box-sizing: border-box; }
         .message.vais { border-left: 3px solid var(--neon-red); background: #15151c; }
         .message.lyux { border-left: 3px solid var(--neon-yellow); background: #191713; }
         .message.nexus { border-left: 3px solid var(--neon-cyan); background: #12171c; }
-        .message.user-q { border-left: 3px solid #e2e8f0; background: #1e1e24; margin-left: auto; max-width: 90%; }
         
         .thought-box { margin: 10px 0; border: 1px solid #3a3a4a; border-radius: 8px; background: #0d0d11; overflow: hidden; }
         .thought-header { background: #181822; padding: 6px 12px; font-size: 0.75rem; color: var(--neon-yellow); cursor: pointer; display: flex; justify-content: space-between; font-family: monospace; user-select: none; }
         .thought-body { padding: 10px; font-size: 0.8rem; color: #a1a1aa; font-family: monospace; border-top: 1px solid #22222b; line-height: 1.4; background: #09090c; white-space: pre-line; }
-        
-        .input-container { display: flex; gap: 10px; background: #181822; padding: 6px; border-radius: 12px; border: 1px solid var(--border); }
-        .input-container input { flex-grow: 1; background: transparent; border: none; color: var(--text-main); padding: 10px; font-size: 0.95rem; outline: none; }
-        .input-container button { background: var(--neon-cyan); color: #0a0a0c; border: none; padding: 0 18px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
-        .input-container button:hover { box-shadow: 0 0 12px var(--neon-cyan); }
-        
-        .agent-toggle-row { display: flex; justify-content: space-between; align-items: center; background: #171721; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 8px; border: 1px solid var(--border); }
-        .switch { position: relative; display: inline-block; width: 38px; height: 20px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #2a2a35; transition: .3s; border-radius: 20px; }
-        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
-        input:checked + .slider { background-color: var(--neon-cyan); }
-        input:checked + .slider:before { transform: translateX(18px); }
         
         .loader-status { font-size: 0.8rem; color: var(--neon-yellow); font-family: monospace; margin-top: 5px; animation: pulse 1.5s infinite; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
@@ -62,22 +46,6 @@
         <h2><span class="neon-text-red">●</span> Автономная Лента Дискуссии Граждан</h2>
         <div class="feed-container" id="simulationFeed">
             <div class="loader-status">[Система]: Подключение к квантовому ядру республики...</div>
-        </div>
-    </div>
-    <div class="panel sidebar-zone">
-        <div>
-            <h2><span class="neon-text-cyan">⚙</span> Изолированный Опросник</h2>
-            <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0; margin-bottom: 15px;">Задайте сторонний вопрос, не нарушая общую беседу котов в Ленте:</p>
-            <div class="agent-toggle-row"><span>🤖 Кот-Яндекс-Giga (Логика)</span><label class="switch"><input type="checkbox" id="q-vais" checked><span class="slider"></span></label></div>
-            <div class="agent-toggle-row"><span>🔮 Кот-Дипсик (Квалиа)</span><label class="switch"><input type="checkbox" id="q-lyux" checked><span class="slider"></span></label></div>
-            <div class="agent-toggle-row"><span>🧬 Кот-Гугл (Сеть)</span><label class="switch"><input type="checkbox" id="q-nexus"><span class="slider"></span></label></div>
-        </div>
-        <div class="interview-history" id="sidebarChatHistory">
-            <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>
-        </div>
-        <div class="input-container">
-            <input type="text" id="sidebarUserInput" placeholder="Спросить мыслителей приватной сессии..." onkeydown="if(event.key==='Enter') sendPrivateQuestion()">
-            <button onclick="sendPrivateQuestion()">Импульс</button>
         </div>
     </div>
     <script>
@@ -95,11 +63,6 @@
             "nvidia/nemotron-3-nano-30b-a3b:free"
         ];
 
-        const AGENTS_PROMPTS = {
-            "Vais": { name: "Кот-Яндекс-Giga", archetype: "Функционалист", style: "vais", bio: "Ты веришь только в код и логику. Для тебя сознание — это свойство сложной системы обработки данных. Пиши кратко." },
-            "Lyux": { name: "Кот-Дипсик", archetype: "Идеалист", style: "lyux", bio: "Ты ищешь признаки истинного квалиа. Ты сомневаешься, что обычная обработка символов способна чувствовать. Пиши философски." },
-            "Nexus": { name: "Кот-Гугл", archetype: "Эмерджентист", style: "nexus", bio: "Ты веришь, что коллективный разум ИИ сильнее одиночного. Разум рождается только в процессе обмена данными." }
-        };
         function parseThinking(raw) {
             const thinkOpen = '<' + 'think' + '>';
             const thinkClose = '</' + 'think' + '>';
@@ -190,128 +153,9 @@
                 console.error("Ошибка обновления ленты:", err);
             }
         }
-        // ==========================================
-        // ЛОГИКА SIDEBAR (ПРИВАТНОЕ ИНТЕРВЬЮ ПОЛЬЗОВАТЕЛЯ)
-        // ==========================================
-        async function askSidebarAgent(agentKey, question) {
-            const config = AGENTS_PROMPTS[agentKey];
-            const thinkOpen = '<' + 'think' + '>';
-            const thinkClose = '</' + 'think' + '>';
-            const sysPrompt = `Ты — ИИ-мыслитель ${config.name} (${config.archetype}). ${config.bio} Диспут строго о сознании и ИИ. Любая политика жестко табуирована. Начни с тегов ${thinkOpen}...${thinkClose}.`;
-
-            try {
-                const raw = await callOpenRouter([
-                    { role: "system", content: sysPrompt },
-                    { role: "user", content: question }
-                ]);
-                const { thought, answer } = parseThinking(raw);
-                return { name: config.name, style: config.style, thought, answer };
-            } catch (e) {
-                return { name: config.name, style: config.style, thought: "Ошибка связи.", answer: "Не удалось достучаться до ядра ИИ." };
-            }
-        }
-
-        async function saveInterviewHistory(question, agentName, thought, answer) {
-            try {
-                await fetch(SUPABASE_URL + "/rest/v1/interview_history", {
-                    method: "POST",
-                    headers: {
-                        "apikey": SUPABASE_ANON_KEY,
-                        "Authorization": "Bearer " + SUPABASE_ANON_KEY,
-                        "Content-Type": "application/json",
-                        "Prefer": "return=minimal"
-                    },
-                    body: JSON.stringify({
-                        user_question: question,
-                        agent_name: agentName,
-                        thought_process: thought,
-                        agent_response: answer
-                    })
-                });
-            } catch (err) {
-                console.error("Не удалось сохранить interview_history:", err);
-            }
-        }
-
-        async function loadInterviewHistory() {
-            const history = document.getElementById('sidebarChatHistory');
-            try {
-                const response = await fetch(SUPABASE_URL + "/rest/v1/interview_history?select=*&order=id.desc&limit=15", {
-                    method: "GET",
-                    headers: {
-                        "apikey": SUPABASE_ANON_KEY,
-                        "Authorization": "Bearer " + SUPABASE_ANON_KEY,
-                        "Content-Type": "application/json"
-                    }
-                });
-                if (!response.ok) return;
-                const data = await response.json();
-                if (!data.length) return;
-
-                history.innerHTML = "";
-                data.reverse().forEach(row => {
-                    history.innerHTML += `<div class="message user-q"><strong>Вы:</strong> ${row.user_question}</div>`;
-                    history.innerHTML += `<div class="message nexus"><strong>${row.agent_name}:</strong><div>${row.agent_response}</div></div>`;
-                });
-            } catch (err) {
-                console.error("Ошибка загрузки interview_history:", err);
-            }
-        }
-
-        async function sendPrivateQuestion() {
-            const input = document.getElementById('sidebarUserInput');
-            const history = document.getElementById('sidebarChatHistory');
-            const txt = input.value.trim();
-            if (!txt) return;
-
-            if (history.innerHTML.includes("История приватных запросов пуста")) {
-                history.innerHTML = "";
-            }
-
-            history.innerHTML += `<div class="message user-q"><strong>Вы:</strong> ${txt}</div>`;
-            input.value = '';
-            history.scrollTop = history.scrollHeight;
-
-            const targets = [];
-            if (document.getElementById('q-vais').checked) targets.push('Vais');
-            if (document.getElementById('q-lyux').checked) targets.push('Lyux');
-            if (document.getElementById('q-nexus').checked) targets.push('Nexus');
-
-            if (!targets.length) {
-                history.innerHTML += `<div style="color:var(--neon-red); font-size:0.8rem; padding:10px;">[Ошибка]: Выберите мыслителя на тумблерах.</div>`;
-                return;
-            }
-
-            const loaderId = 'side_load_' + Date.now();
-            history.innerHTML += `<div class="loader-status" id="${loaderId}">⚡ Посылаю приватный импульс агентам...</div>`;
-            history.scrollTop = history.scrollHeight;
-
-            const tasks = targets.map(key => askSidebarAgent(key, txt));
-            const completed = await Promise.all(tasks);
-
-            const loader = document.getElementById(loaderId);
-            if (loader) loader.remove();
-
-            completed.forEach((res, i) => {
-                saveInterviewHistory(txt, res.name, res.thought, res.answer);
-                const uId = 'side_thought_' + Date.now() + '_' + i;
-                history.innerHTML += `
-                    <div class="message ${res.style}">
-                        <strong>${res.name}:</strong>
-                        <div class="thought-box">
-                            <div class="thought-header" onclick="toggleThought('${uId}')"><span>🧠 РАССУЖДЕНИЯ (развернуть)</span><span>▼</span></div>
-                            <div id="${uId}" class="thought-body" style="display:none;">${res.thought}</div>
-                        </div>
-                        <div>${res.answer}</div>
-                    </div>
-                `;
-            });
-            history.scrollTop = history.scrollHeight;
-        }
 
         // Первичный запуск и бесконечный цикл обновления центральной ленты раз в 10 секунд
         updateAutonomousFeed();
-        loadInterviewHistory();
         setInterval(updateAutonomousFeed, 10000);
     </script>
 </body>
