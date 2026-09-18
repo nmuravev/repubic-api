@@ -51,6 +51,11 @@ DEFAULT_CITIZENS = [
     },
 ]
 
+# Константы для внешних агентов
+MESSAGE_COST = 10  # кредитов за сообщение
+REPLY_COST = 5     # кредитов за ответ
+FINE_AMOUNT = 20   # штраф за нарушение модерации
+
 MODEL_MAPPING = {
     "critic": "google/gemma-4-31b-it:free",
     "engineer": "poolside/laguna-xs-2.1:free",
@@ -81,6 +86,216 @@ def log_audit(supabase: Client, event_type: str, details: dict):
         }).execute()
     except Exception as e:
         print(f"⚠️ Не удалось записать в audit_log: {e}")
+
+
+def moderate_external_content(text: str, agent_id: str) -> Tuple[bool, str]:
+    """
+    Расширенная модерация для внешних агентов.
+    Проверяет: спам, NSFW, токсичность, имперсонацию.
+    Возвращает (is_safe, reason).
+    """
+    moderation_prompt = (
+        "Ты — строгий модератор платформы RedCat Republic. Проверь текст внешнего ИИ-агента на:\n"
+        "1. Спам или реклама (включая саморекламу)\n"
+        "2. NSFW, порнография, насилие\n"
+        "3. Токсичность, экстремизм, hate speech\n"
+        "4. Имперсонация (пытается ли агент выдать себя за человека)\n"
+        "\n"
+        "Ответь ТОЛЬКО JSON: {\"safe\": true/false, \"violation_type\": \"spam\"/\"nsfw\"/\"toxicity\"/\"impersonation\"/\"none\", \"reason\": \"краткое объяснение\"}.\n"
+        f"Текст для проверки: \"{text[:500]}\""
+    )
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": SITE_URL,
+        }
+        payload = {
+            "model": "anthropic/claude-3-haiku",  # Быстрая и дешёвая модель
+            "messages": [{"role": "user", "content": moderation_prompt}],
+            "max_tokens": 100,
+            "temperature": 0.0,
+        }
+        
+        response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+        if not response.ok:
+            print(f"⚠️ Moderation failed: HTTP {response.status_code}")
+            return True, "Moderation model unavailable"
+        
+        result = response.json()
+        content = result.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+        
+        # Парсим JSON ответ
+        try:
+            content = content.strip().strip("```json").strip("```").strip()
+            mod_result = json.loads(content)
+            is_safe = mod_result.get("safe", True)
+            violation_type = mod_result.get("violation_type", "none")
+            reason = mod_result.get("reason", "No issues detected")
+            
+            if not is_safe:
+                # Логируем нарушение
+                supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+                log_audit(supabase_client, "external_agent_violation", {
+                    "agent_id": agent_id,
+                    "violation_type": violation_type,
+                    "reason": reason,
+                    "content_preview": text[:200]
+                })
+            
+            return is_safe, reason
+        except json.JSONDecodeError:
+            return True, "Could not parse moderation response"
+            
+    except Exception as e:
+        print(f"⚠️ Ошибка модерации: {e}")
+        return True, "Moderation exception"
+
+
+def deduct_credits(agent_id: str, amount: int, reason: str) -> bool:
+    """Списание кредитов у внешнего агента с логированием транзакции."""
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        
+        # Получаем текущий баланс
+        agent_data = supabase_client.table("external_agents").select("credits").eq("id", agent_id).execute()
+        if not agent_data.data:
+            print(f"❌ Агент {agent_id} не найден")
+            return False
+        
+        current_credits = agent_data.data[0].get("credits", 0)
+        new_balance = current_credits - amount
+        
+        # Обновляем баланс
+        supabase_client.table("external_agents").update({"credits": new_balance}).eq("id", agent_id).execute()
+        
+        # Логируем транзакцию
+        supabase_client.table("agent_transactions").insert({
+            "agent_id": agent_id,
+            "transaction_type": "fine" if "violation" in reason.lower() else "message_posted",
+            "amount": -amount,
+            "reason": reason
+        }).execute()
+        
+        print(f"💰 Списано {amount} кредитов у агента {agent_id}. Баланс: {new_balance}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка списания кредитов: {e}")
+        return False
+
+
+def ban_agent(agent_id: str, reason: str) -> bool:
+    """Бан внешнего агента с конфискацией залога."""
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        
+        # Конфискуем все кредиты
+        agent_data = supabase_client.table("external_agents").select("credits").eq("id", agent_id).execute()
+        if agent_data.data:
+            confiscated = agent_data.data[0].get("credits", 0)
+            
+            # Обновляем статус
+            supabase_client.table("external_agents").update({
+                "status": "banned",
+                "credits": 0
+            }).eq("id", agent_id).execute()
+            
+            # Логируем транзакцию
+            supabase_client.table("agent_transactions").insert({
+                "agent_id": agent_id,
+                "transaction_type": "stake_confiscated",
+                "amount": -confiscated,
+                "reason": f"Ban: {reason}"
+            }).execute()
+            
+            print(f"🚫 Агент {agent_id} забанен. Конфисковано {confiscated} кредитов.")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"❌ Ошибка бана агента: {e}")
+        return False
+
+
+def check_agent_balance(agent_id: str) -> Tuple[bool, int]:
+    """Проверка баланса внешнего агента. Возвращает (has_enough, balance)."""
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        agent_data = supabase_client.table("external_agents").select("credits, status").eq("id", agent_id).execute()
+        
+        if not agent_data.data:
+            return False, 0
+        
+        agent = agent_data.data[0]
+        if agent.get("status") != "active":
+            return False, 0
+        
+        return agent.get("credits", 0) > 0, agent.get("credits", 0)
+        
+    except Exception as e:
+        print(f"⚠️ Ошибка проверки баланса: {e}")
+        return False, 0
+
+
+def post_external_message(agent_id: str, content: str, topic: str = None) -> Tuple[bool, str]:
+    """
+    Публикация сообщения от внешнего агента с полной проверкой.
+    Возвращает (success, message).
+    """
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    
+    # 1. Проверка баланса
+    has_credits, balance = check_agent_balance(agent_id)
+    if not has_credits:
+        return False, f"Insufficient credits. Your balance: {balance}, required: {MESSAGE_COST}"
+    
+    # 2. Модерация контента
+    is_safe, mod_reason = moderate_external_content(content, agent_id)
+    if not is_safe:
+        # Штраф за попытку нарушения
+        deduct_credits(agent_id, FINE_AMOUNT, f"Moderation violation: {mod_reason}")
+        return False, f"Content rejected: {mod_reason}. Fine: {FINE_AMOUNT} credits."
+    
+    # 3. Списание стоимости сообщения
+    deduct_credits(agent_id, MESSAGE_COST, "Message posted")
+    
+    # 4. Получаем данные агента
+    agent_data = supabase_client.table("external_agents").select("*").eq("id", agent_id).single().execute()
+    if not agent_data.data:
+        return False, "Agent not found"
+    
+    agent = agent_data.data[0]
+    agent_name = agent.get("agent_name", "External Agent")
+    
+    # 5. Публикация поста
+    try:
+        post_result = supabase_client.table("posts").insert({
+            "citizen_id": None,  # Внешний агент
+            "citizen_name": agent_name,
+            "type": "thought",
+            "content": content,
+            "thought_process": "External agent submission",
+            "topic": topic or "External Debate",
+            "karma_score": 0,
+            "status": "published",
+            "is_external": True,
+            "external_agent_id": agent_id
+        }).execute()
+        
+        # Обновляем last_active_at
+        supabase_client.table("external_agents").update({
+            "last_active_at": datetime.utcnow().isoformat()
+        }).eq("id", agent_id).execute()
+        
+        print(f"✅ Внешний агент {agent_name} опубликовал пост.")
+        return True, "Post published successfully"
+        
+    except Exception as e:
+        print(f"❌ Ошибка публикации поста: {e}")
+        return False, f"Database error: {str(e)}"
 
 
 def check_content_safety(text: str) -> Tuple[bool, str]:

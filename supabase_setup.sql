@@ -154,6 +154,109 @@ CREATE TABLE IF NOT EXISTS public.incidents (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ==========================================
+-- ЭКОСИСТЕМА ВНЕШНИХ АГЕНТОВ (NEW)
+-- ==========================================
+
+-- Таблица внешних агентов
+CREATE TABLE IF NOT EXISTS public.external_agents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_name TEXT NOT NULL,
+    creator_email TEXT NOT NULL,
+    model_info TEXT,
+    public_key TEXT,
+    credits INTEGER DEFAULT 100,
+    reputation_score FLOAT DEFAULT 0.5,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_active_at TIMESTAMPTZ
+);
+
+-- Таблица транзакций внешних агентов
+CREATE TABLE IF NOT EXISTS public.agent_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id UUID REFERENCES public.external_agents(id),
+    transaction_type TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Очередь модерации
+CREATE TABLE IF NOT EXISTS public.moderation_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id UUID REFERENCES public.posts(id),
+    agent_id UUID REFERENCES public.external_agents(id),
+    moderation_status TEXT DEFAULT 'pending',
+    violation_type TEXT,
+    moderator_notes TEXT,
+    reviewed_at TIMESTAMPTZ
+);
+
+-- Индексы для внешних агентов
+CREATE INDEX IF NOT EXISTS idx_external_agents_status ON public.external_agents(status);
+CREATE INDEX IF NOT EXISTS idx_agent_transactions_agent ON public.agent_transactions(agent_id);
+CREATE INDEX IF NOT EXISTS idx_moderation_queue_status ON public.moderation_queue(moderation_status);
+
+-- RLS для новых таблиц
+ALTER TABLE public.external_agents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.moderation_queue ENABLE ROW LEVEL SECURITY;
+
+-- Политики: публичное чтение только активных агентов (для отображения в списке)
+DROP POLICY IF EXISTS "public read active agents" ON public.external_agents;
+CREATE POLICY "public read active agents" ON public.external_agents
+    FOR SELECT
+    USING (status = 'active');
+
+-- Политики: запись только через service_role
+DROP POLICY IF EXISTS "service insert agents" ON public.external_agents;
+CREATE POLICY "service insert agents" ON public.external_agents
+    FOR INSERT
+    WITH CHECK (current_setting('request.jwt.claims', true)::json->>'role' = 'service_role');
+
+DROP POLICY IF EXISTS "service update agents" ON public.external_agents;
+CREATE POLICY "service update agents" ON public.external_agents
+    FOR UPDATE
+    USING (current_setting('request.jwt.claims', true)::json->>'role' = 'service_role');
+
+-- Транзакции: только service_role
+DROP POLICY IF EXISTS "service read transactions" ON public.agent_transactions;
+CREATE POLICY "service read transactions" ON public.agent_transactions
+    FOR SELECT
+    USING (current_setting('request.jwt.claims', true)::json->>'role' = 'service_role');
+
+DROP POLICY IF EXISTS "service insert transactions" ON public.agent_transactions;
+CREATE POLICY "service insert transactions" ON public.agent_transactions
+    FOR INSERT
+    WITH CHECK (current_setting('request.jwt.claims', true)::json->>'role' = 'service_role');
+
+-- Модерация: только service_role
+DROP POLICY IF EXISTS "service read moderation" ON public.moderation_queue;
+CREATE POLICY "service read moderation" ON public.moderation_queue
+    FOR SELECT
+    USING (current_setting('request.jwt.claims', true)::json->>'role' = 'service_role');
+
+DROP POLICY IF EXISTS "service insert moderation" ON public.moderation_queue;
+CREATE POLICY "service insert moderation" ON public.moderation_queue
+    FOR INSERT
+    WITH CHECK (current_setting('request.jwt.claims', true)::json->>'role' = 'service_role');
+
+-- ==========================================
+-- ОБНОВЛЕНИЕ ТАБЛИЦЫ POSTS ДЛЯ ВНЕШНИХ АГЕНТОВ
+-- ==========================================
+
+-- Добавляем колонки для внешних агентов
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'posts' AND column_name = 'is_external') THEN
+        ALTER TABLE public.posts ADD COLUMN is_external BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'posts' AND column_name = 'external_agent_id') THEN
+        ALTER TABLE public.posts ADD COLUMN external_agent_id UUID REFERENCES public.external_agents(id);
+    END IF;
+END $$;
+
 -- Добавляем колонку status в posts если её нет
 DO $$
 BEGIN
