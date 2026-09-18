@@ -41,6 +41,14 @@ def main() -> int:
 
     shutil.copy2(template_path, out / "index.html")
 
+    # Copy all HTML pages
+    html_pages = ["login.html", "disclaimer.html", "404.html"]
+    for html_file in html_pages:
+        page_path = Path(html_file)
+        if page_path.exists():
+            shutil.copy2(page_path, out / html_file)
+            print(f"  ✓ Copied {html_file}")
+
     config_js = (
         "window.RED_CAT_CONFIG = "
         + json.dumps({"supabaseUrl": url, "supabaseAnonKey": key}, ensure_ascii=False)
@@ -63,7 +71,7 @@ def main() -> int:
         )
 
     (out / ".nojekyll").write_text("", encoding="utf-8")
-    print("✅ Site built in _site/ (index.html + config.js + STATE.md)")
+    print("✅ Site built in _site/ (index.html + login.html + disclaimer.html + 404.html + config.js + STATE.md)")
     return 0
 
 

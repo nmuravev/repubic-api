@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - 'index.html'
+      - 'login.html'
+      - 'disclaimer.html'
+      - '404.html'
       - 'CNAME'
       - 'build_site.py'
       - '.github/workflows/deploy-pages.yml'
