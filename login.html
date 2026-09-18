@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>RedCat Republic — Вход</title>
+    <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --bg-dark: #0a0a0c;
+            --panel-bg: #121216;
+            --border: #22222b;
+            --neon-red: #ff3344;
+            --neon-cyan: #00f0ff;
+            --neon-yellow: #eab308;
+            --text-main: #e2e8f0;
+            --text-muted: #64748b;
+        }
+        html {
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+        }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .login-container {
+            width: 100%;
+            max-width: 400px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        label {
+            display: block;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            background: #181822;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-size: 0.95rem;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 8px;
+            background: var(--neon-cyan);
+            color: #0a0a0c;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 0.95rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        button:hover {
+            box-shadow: 0 0 16px rgba(0, 240, 255, 0.4);
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .toggle-mode {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 0.85rem;
+        }
+        .toggle-mode a {
+            color: var(--neon-cyan);
+            cursor: pointer;
+            text-decoration: none;
+            border-bottom: 1px dashed var(--neon-cyan);
+        }
+        .toggle-mode a:hover {
+            text-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+        }
+        .error-message, .success-message {
+            padding: 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 0.85rem;
+            display: none;
+        }
+        .error-message {
+            background: #1a1214;
+            border: 1px solid var(--neon-red);
+            color: var(--neon-red);
+        }
+        .success-message {
+            background: #121a14;
+            border: 1px solid #22c55e;
+            color: #22c55e;
+        }
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.85rem;
+        }
+        .back-link a {
+            color: var(--neon-yellow);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--neon-yellow);
+        }
+        .back-link a:hover {
+            text-shadow: 0 0 8px rgba(234, 179, 8, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>🐱 RedCat</h1>
+        
+        <div class="error-message" id="errorMsg"></div>
+        <div class="success-message" id="successMsg"></div>
+
+        <form id="authForm">
+            <div class="form-group">
+                <label for="email">Email адрес</label>
+                <input type="email" id="email" name="email" placeholder="ваш@email.com" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" placeholder="••••••••" required>
+            </div>
+
+            <button type="submit" id="authBtn">Вход</button>
+            <button type="button" id="signupBtn" style="background: var(--neon-yellow); color: #0a0a0c; margin-top: 4px;">Создать аккаунт</button>
+        </form>
+
+        <div class="toggle-mode">
+            <span id="modeLabel">Нет аккаунта? </span>
+            <a onclick="toggleAuthMode()">Зарегистрируйтесь</a>
+        </div>
+
+        <div class="back-link">
+            <a href="/">← Вернуться на главную</a>
+        </div>
+    </div>
+
+    <script>
+        let authMode = 'login';
+        const supabase = window.supabase.createClient(
+            window.RED_CAT_CONFIG.supabaseUrl,
+            window.RED_CAT_CONFIG.supabaseAnonKey
+        );
+
+        async function initAuth() {
+            const session = await supabase.auth.getSession();
+            if (session.data?.session) {
+                window.location.href = '/';
+            }
+        }
+
+        function toggleAuthMode() {
+            authMode = authMode === 'login' ? 'signup' : 'login';
+            const authBtn = document.getElementById('authBtn');
+            const signupBtn = document.getElementById('signupBtn');
+            const modeLabel = document.getElementById('modeLabel');
+            
+            if (authMode === 'signup') {
+                authBtn.textContent = 'Создать аккаунт';
+                signupBtn.textContent = 'Вход вместо этого';
+                modeLabel.textContent = 'Уже есть аккаунт? ';
+            } else {
+                authBtn.textContent = 'Вход';
+                signupBtn.textContent = 'Создать аккаунт';
+                modeLabel.textContent = 'Нет аккаунта? ';
+            }
+        }
+
+        document.getElementById('signupBtn').addEventListener('click', toggleAuthMode);
+
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('errorMsg');
+            const successDiv = document.getElementById('successMsg');
+            const authBtn = document.getElementById('authBtn');
+
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+
+            if (!email || !password) {
+                errorDiv.textContent = '❌ Заполните все поля';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            if (password.length < 6) {
+                errorDiv.textContent = '❌ Пароль должен быть минимум 6 символов';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            authBtn.classList.add('loading');
+
+            try {
+                let result;
+                if (authMode === 'login') {
+                    result = await supabase.auth.signInWithPassword({ email, password });
+                    if (result.error) throw new Error(result.error.message);
+                    successDiv.textContent = '✅ Вход выполнен успешно!';
+                    successDiv.style.display = 'block';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    result = await supabase.auth.signUp({ email, password });
+                    if (result.error) throw new Error(result.error.message);
+                    successDiv.textContent = '✅ Регистрация успешна! Проверьте email для подтверждения.';
+                    successDiv.style.display = 'block';
+                    document.getElementById('authForm').reset();
+                }
+            } catch (err) {
+                let msg = err.message;
+                if (msg.includes('Invalid login credentials')) msg = 'Неверный email или пароль';
+                if (msg.includes('User already registered')) msg = 'Этот email уже зарегистрирован';
+                if (msg.includes('Email rate limit')) msg = 'Слишком много попыток. Попробуйте позже';
+                errorDiv.textContent = `❌ ${msg}`;
+                errorDiv.style.display = 'block';
+            } finally {
+                authBtn.classList.remove('loading');
+            }
+        });
+
+        initAuth();
+    </script>
+</body>
+</html>
