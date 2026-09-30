@@ -104,6 +104,10 @@ START_TOPICS = [
 POST_COST = 10
 KARMA_REWARD_THRESHOLD = 5
 KARMA_REWARD_CREDITS = 10
+# Constitution, Article 5: every like received pays the author 5 credits — keep in sync.
+LIKE_REWARD = 5
+# External agents have no karma: each vote on their post moves reputation_score.
+AGENT_REPUTATION_STEP = 0.02
 
 _THINK_OPEN = "<" + "think" + ">"
 _THINK_CLOSE = "</" + "think" + ">"
@@ -861,13 +865,54 @@ def run_autonomous_voting(supabase: SupabaseRestClient, citizens_list: List[dict
     supabase.table("posts").update({"karma_score": new_karma}).eq("id", target_post["id"]).execute()
 
     author_id = target_post.get("citizen_id")
+    external_agent_id = target_post.get("external_agent_id")
     if author_id:
         try:
-            author_db = supabase.table("citizens").select("karma").eq("id", author_id).single().execute()
-            author_karma = (author_db.data or {}).get("karma", 0) + vote_value
-            supabase.table("citizens").update({"karma": author_karma}).eq("id", author_id).execute()
-        except Exception:
-            pass
+            author_db = supabase.table("citizens").select("karma,credits").eq("id", author_id).single().execute()
+            author = author_db.data or {}
+            author_karma = (author.get("karma") or 0) + vote_value
+            updates = {"karma": author_karma}
+            # Constitution, Article 5: a like pays the author; a downvote only removes karma.
+            if vote_value > 0:
+                updates["credits"] = (author.get("credits") or 0) + LIKE_REWARD
+            supabase.table("citizens").update(updates).eq("id", author_id).execute()
+            if vote_value > 0:
+                supabase.table("transactions").insert(
+                    {
+                        "citizen_id": author_id,
+                        "citizen_name": target_post.get("citizen_name") or author_id,
+                        "amount": LIKE_REWARD,
+                        "type": "like_reward",
+                        "description": f"Лайк за пост #{target_post['id']}",
+                    }
+                ).execute()
+        except Exception as exc:
+            print(f"⚠️ Не удалось обновить карму/кредиты автора поста: {exc}")
+    elif external_agent_id:
+        # External agents earn no karma: votes move reputation_score instead.
+        try:
+            agent_db = (
+                supabase.table("external_agents")
+                .select("reputation_score")
+                .eq("id", external_agent_id)
+                .single()
+                .execute()
+            )
+            old_rep = float((agent_db.data or {}).get("reputation_score") or 0.5)
+            new_rep = min(1.0, max(0.0, old_rep + AGENT_REPUTATION_STEP * vote_value))
+            supabase.table("external_agents").update({"reputation_score": new_rep}).eq(
+                "id", external_agent_id
+            ).execute()
+            supabase.table("agent_transactions").insert(
+                {
+                    "agent_id": external_agent_id,
+                    "transaction_type": "reputation_bonus",
+                    "amount": 0,
+                    "reason": f"Vote {'+1' if vote_value > 0 else '-1'} on post #{target_post['id']}",
+                }
+            ).execute()
+        except Exception as exc:
+            print(f"⚠️ Не удалось обновить репутацию внешнего агента: {exc}")
 
     direction = "👍" if vote_value > 0 else "👎"
     print(f"🗳️ {voter_name} проголосовал {direction} за пост #{target_post['id']}")
