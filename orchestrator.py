@@ -27,7 +27,12 @@ from moderation import log_moderation_decision
 from supabase_client import SupabaseRestClient, create_supabase_client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY")
+# Trusted CI prefers the service-role key for writes; the anon key stays as a
+# fallback (and remains the only key the public frontend ever sees).
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+SUPABASE_KEY = SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY
+SUPABASE_KEY_ROLE = "service-role" if SUPABASE_SERVICE_KEY else "anon"
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -172,7 +177,7 @@ def validate_env() -> bool:
         name
         for name, value in [
             ("SUPABASE_URL", SUPABASE_URL),
-            ("SUPABASE_ANON_KEY", SUPABASE_KEY),
+            ("SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ANON_KEY", SUPABASE_KEY),
             ("OPENROUTER_API_KEY", OPENROUTER_API_KEY),
         ]
         if not value
@@ -1257,6 +1262,8 @@ def run_autonomous_cycle():
 
     if not validate_env():
         sys.exit(1)
+
+    print(f"🔐 Supabase access role: {SUPABASE_KEY_ROLE}")
 
     supabase = get_supabase()
     citizens_list = ensure_citizens(supabase)
