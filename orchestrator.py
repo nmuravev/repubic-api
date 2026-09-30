@@ -655,7 +655,11 @@ def publish_post(
             "citizen_name": citizen_name,
             "amount": -POST_COST,
             "type": "post",
-            "description": f"Публикация ({post_type}) в Ленте",
+            "description": (
+                f"Публикация ({post_type}) поста #{post_id} в Ленте"
+                if post_id
+                else f"Публикация ({post_type}) в Ленте"
+            ),
         }
     ).execute()
     return post_id
@@ -923,10 +927,14 @@ def run_autonomous_voting(supabase: SupabaseRestClient, citizens_list: List[dict
 
 def run_constitution_proposal(supabase: SupabaseRestClient, citizens_list: List[dict]) -> bool:
     try:
+        # Pending = still open for votes. Auto-closed articles (status
+        # "rejected" via run_constitution_voting) must not count here,
+        # otherwise two failed proposals block every new one forever —
+        # the deadlock that articles 10/11 caused.
         pending = (
             supabase.table("constitution")
             .select("id")
-            .eq("is_active", False)
+            .eq("status", "voting")
             .limit(3)
             .execute()
         )
@@ -983,7 +991,7 @@ def run_constitution_voting(supabase: SupabaseRestClient, citizens_list: List[di
         pending_db = (
             supabase.table("constitution")
             .select("*")
-            .eq("is_active", False)
+            .eq("status", "voting")
             .order("id", desc=False)
             .limit(5)
             .execute()
@@ -1038,11 +1046,7 @@ def run_constitution_voting(supabase: SupabaseRestClient, citizens_list: List[di
         new_for = article.get("votes_for") or 0
         new_against = (article.get("votes_against") or 0) + 1
 
-    updates = {"votes_for": new_for, "votes_against": new_against}
-    if new_for > new_against and new_for >= 3:
-        updates["is_active"] = True
-
-    supabase.table("constitution").update(updates).eq("id", article["id"]).execute()
+    # Record the vote first so the auto-close check below sees the full tally.
     try:
         supabase.table("constitution_votes").insert(
             {
@@ -1055,12 +1059,40 @@ def run_constitution_voting(supabase: SupabaseRestClient, citizens_list: List[di
     except Exception as exc:
         print(f"⚠️ Не удалось записать constitution_vote: {exc}")
 
+    updates = {"votes_for": new_for, "votes_against": new_against}
+    if new_for > new_against and new_for >= 3:
+        updates["is_active"] = True
+        updates["status"] = "passed"
+    else:
+        # Auto-close: once every citizen has voted and adoption failed,
+        # mark the article "rejected" so it stops blocking new proposals.
+        try:
+            votes_count = (
+                supabase.table("constitution_votes")
+                .select("id")
+                .eq("article_id", article["id"])
+                .execute()
+            )
+            voted_total = len(votes_count.data or [])
+        except Exception as exc:
+            print(f"⚠️ Не удалось посчитать голоса статьи: {exc}")
+            voted_total = 0
+        if voted_total >= len(citizens_list):
+            updates["status"] = "rejected"
+
+    supabase.table("constitution").update(updates).eq("id", article["id"]).execute()
+
     if updates.get("is_active"):
         supabase.table("constitution").update({"is_active": False}).eq("is_active", True).neq(
             "id", article["id"]
         ).execute()
 
-    print(f"⚖️ {voter['name']} проголосовал по статье #{article['article_number']}")
+    if updates.get("status") == "passed":
+        print(f"✅ Статья #{article['article_number']} принята ({new_for}:{new_against})")
+    elif updates.get("status") == "rejected":
+        print(f"🚫 Статья #{article['article_number']} закрыта отклонением ({new_for}:{new_against})")
+    else:
+        print(f"⚖️ {voter['name']} проголосовал по статье #{article['article_number']} ({new_for}:{new_against})")
     return True
 
 
