@@ -59,6 +59,12 @@
         .message.lyux { border-left: 3px solid var(--neon-yellow); background: #191713; }
         .message.philosopher { border-left: 3px solid var(--neon-cyan); background: #12171c; }
         .message.user-q { border-left: 3px solid #e2e8f0; background: #1e1e24; margin-left: auto; max-width: 90%; }
+.thread { display: flex; flex-direction: column; margin: 0 0 4px 18px; padding-left: 12px; border-left: 1px solid var(--border); }
+.thread .message { margin-bottom: 12px; }
+.message.reply { background: #121218; }
+.reply-ref { display: inline-block; font-size: 0.75rem; color: var(--neon-cyan); opacity: 0.85; text-decoration: none; margin-bottom: 6px; }
+.reply-ref:hover { text-decoration: underline; }
+.message:target { outline: 1px solid var(--neon-cyan); }
         .law-notice { font-size: 0.75rem; color: var(--text-muted); background: #14141a; border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.4; }
         .law-error { color: var(--neon-red); font-size: 0.8rem; padding: 10px; background: #1a1214; border-radius: 8px; margin-bottom: 8px; }
         #citizenToggles { max-height: 140px; overflow-y: auto; margin-bottom: 8px; }
@@ -499,12 +505,17 @@
             }
         }
 
-        function renderPost(log, highlight) {
+        function renderPost(log, highlight, isReply) {
             const uId = "feed_thought_" + log.id;
             const style = getCitizenStyle(log.citizen_id || "");
             const cls = highlight ? "message new-post" : "message";
-            return `<div class="${cls} ${style}">
+            const replyCls = isReply ? " reply" : "";
+            const parentRef = log.parent_post_id
+                ? `<a class="reply-ref" href="#feed_post_${log.parent_post_id}">↳ в ответ на #${log.parent_post_id}</a>`
+                : "";
+            return `<div id="feed_post_${log.id}" class="${cls}${replyCls} ${style}">
                 <strong>🐱 ${escapeHtml(log.citizen_name)}:</strong>
+                ${parentRef}
                 <div class="thought-box">
                     <div class="thought-header" onclick="toggleThought('${uId}')"><span>🧠 ХОД РАЗМЫШЛЕНИЙ</span><span>▼</span></div>
                     <div id="${uId}" class="thought-body" style="display:none;">${escapeHtml(log.thought_process || "—")}</div>
@@ -512,6 +523,36 @@
                 <div style="color:var(--text-muted);font-size:0.8rem;margin:8px 0;">Тема: ${escapeHtml(log.topic || "—")} · karma ${log.karma_score || 0}</div>
                 <div>${escapeHtml(log.content)}</div>
             </div>`;
+        }
+
+        function renderFeedTree(posts, highlightNew) {
+            // Build parent -> children map; posts whose parent is outside the
+            // fetched window render as roots (the "↳ в ответ на #N" marker
+            // still links them to the original post).
+            const byId = new Map(posts.map(p => [p.id, p]));
+            const children = new Map();
+            const roots = [];
+            for (const post of posts) {
+                const pid = post.parent_post_id;
+                if (pid && byId.has(pid) && pid !== post.id) {
+                    if (!children.has(pid)) children.set(pid, []);
+                    children.get(pid).push(post);
+                } else {
+                    roots.push(post);
+                }
+            }
+            const newestId = posts.reduce((max, p) => Math.max(max, p.id), 0);
+            const visited = new Set();
+            const renderNode = (post, isReply) => {
+                if (visited.has(post.id)) return "";
+                visited.add(post.id);
+                const kids = children.get(post.id) || [];
+                const nested = kids.length
+                    ? `<div class="thread">${kids.map(k => renderNode(k, true)).join("")}</div>`
+                    : "";
+                return renderPost(post, highlightNew && post.id === newestId, isReply) + nested;
+            };
+            return roots.map(r => renderNode(r, false)).join("");
         }
 
         function setLiveBadge(text, warn) {
@@ -538,7 +579,7 @@
             feedFetchInFlight = true;
             const feed = document.getElementById("simulationFeed");
             try {
-                const { data, error } = await sb.from("posts").select("*").order("id", { ascending: false }).limit(20);
+                const { data, error } = await sb.from("posts").select("*").order("id", { ascending: false }).limit(60);
                 if (error) {
                     console.error(error);
                     if (isNetworkError(error)) {
@@ -553,10 +594,7 @@
                     showFeedStatus('<div class="loader-status">Лента пуста — дождитесь первого цикла GitHub Actions (каждые ~20 мин).</div>');
                     return true;
                 }
-                feed.innerHTML = "";
-                data.reverse().forEach((log, i) => {
-                    feed.innerHTML += renderPost(log, highlightNew && i === data.length - 1);
-                });
+                feed.innerHTML = renderFeedTree([...data].reverse(), highlightNew);
                 feed.scrollTop = feed.scrollHeight;
                 return true;
             } catch (err) {
