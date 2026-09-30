@@ -23,7 +23,7 @@
             background-color: var(--bg-dark); color: var(--text-main);
             font-family: 'Segoe UI', system-ui, sans-serif; margin: 0;
             padding: calc(var(--page-pad) + var(--safe-top)) var(--page-pad) calc(var(--page-pad) + var(--safe-bottom));
-            display: grid; grid-template-columns: 1fr 450px; gap: 20px;
+            display: grid; grid-template-columns: 1fr; gap: 20px;
             height: calc(100vh - 40px); min-height: 100dvh; box-sizing: border-box;
             overflow-x: hidden;
         }
@@ -38,8 +38,6 @@
         .neon-text-red { color: var(--neon-red); text-shadow: 0 0 10px rgba(255,51,68,0.3); }
         .simulation-zone { flex-grow: 1; }
         .feed-container { flex-grow: 1; overflow-y: auto; padding-right: 10px; margin-bottom: 10px; display: flex; flex-direction: column; }
-        .sidebar-zone { justify-content: space-between; gap: 15px; }
-        .interview-history { flex-grow: 1; overflow-y: auto; padding-right: 5px; font-size: 0.9rem; border-bottom: 1px dashed var(--border); margin-bottom: 10px; }
         .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
         .tab-btn {
             background: #171721; border: 1px solid var(--border); color: var(--text-muted);
@@ -67,7 +65,6 @@
 .message:target { outline: 1px solid var(--neon-cyan); }
         .law-notice { font-size: 0.75rem; color: var(--text-muted); background: #14141a; border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.4; }
         .law-error { color: var(--neon-red); font-size: 0.8rem; padding: 10px; background: #1a1214; border-radius: 8px; margin-bottom: 8px; }
-        #citizenToggles { max-height: 140px; overflow-y: auto; margin-bottom: 8px; }
         .leader-row, .constitution-row {
             background: #14141a; border: 1px solid var(--border); border-radius: 10px;
             padding: 12px 14px; margin-bottom: 10px;
@@ -98,20 +95,8 @@
             background: var(--neon-cyan); color: #0a0a0c; border: none; padding: 0 18px;
             border-radius: 8px; font-weight: bold; cursor: pointer; flex-shrink: 0;
         }
-        .agent-toggle-row { display: flex; justify-content: space-between; align-items: center; background: #171721; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 8px; border: 1px solid var(--border); }
-        .switch { position: relative; display: inline-block; width: 38px; height: 20px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; inset: 0; background: #2a2a35; transition: .3s; border-radius: 20px; }
-        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; transition: .3s; border-radius: 50%; }
-        input:checked + .slider { background-color: var(--neon-cyan); }
-        input:checked + .slider:before { transform: translateX(18px); }
         .loader-status { font-size: 0.8rem; color: var(--neon-yellow); font-family: monospace; margin-top: 5px; animation: pulse 1.5s infinite; }
-        .topic-box { margin-top: 10px; }
-        .queue-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; background: #14141a; border: 1px dashed var(--border); border-radius: 8px; }
-        .queue-pill { font-size: 0.75rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); }
-        .queue-pill.pending { color: var(--neon-yellow); border-color: var(--neon-yellow); }
-        .queue-pill.done { color: #22c55e; border-color: #22c55e; }
-        .queue-pill.rejected { color: var(--neon-red); border-color: var(--neon-red); }
+        .topic-box { margin-top: 10px; flex-shrink: 0; }
         .state-doc { font-size: 0.9rem; line-height: 1.6; color: var(--text-main); }
         .state-doc h2 { color: var(--neon-cyan); font-size: 1.1rem; margin: 0 0 12px; }
         .state-doc h3 { color: var(--neon-yellow); font-size: 0.95rem; margin: 18px 0 8px; }
@@ -127,7 +112,7 @@
         /* —— Responsive: tablet —— */
         @media (max-width: 1100px) {
             body {
-                grid-template-columns: 1fr 360px;
+                grid-template-columns: 1fr;
                 gap: 16px;
                 --page-pad: 16px;
             }
@@ -156,18 +141,10 @@
                 min-height: min(70dvh, 640px);
                 max-height: none;
             }
-            .sidebar-zone {
-                flex: 0 0 auto;
-                min-height: min(55dvh, 520px);
-            }
             .feed-container {
                 min-height: 280px;
                 max-height: 52dvh;
                 padding-right: 4px;
-            }
-            .interview-history {
-                min-height: 180px;
-                max-height: 36dvh;
             }
             h2 {
                 font-size: 0.92rem;
@@ -221,13 +198,6 @@
                 padding: 0 14px;
                 min-height: 44px;
             }
-            #citizenToggles {
-                max-height: 180px;
-            }
-            .agent-toggle-row {
-                padding: 12px 14px;
-                min-height: 44px;
-            }
             .thought-header {
                 padding: 10px 12px;
                 min-height: 40px;
@@ -248,16 +218,9 @@
             .simulation-zone {
                 min-height: 62dvh;
             }
-            .sidebar-zone {
-                min-height: 48dvh;
-            }
             .feed-container {
                 max-height: 48dvh;
                 min-height: 220px;
-            }
-            .interview-history {
-                max-height: 30dvh;
-                min-height: 140px;
             }
             h2 {
                 font-size: 0.85rem;
@@ -297,12 +260,6 @@
             .feed-container {
                 max-height: 62dvh;
             }
-            .sidebar-zone {
-                min-height: 70dvh;
-            }
-            .interview-history {
-                max-height: 42dvh;
-            }
         }
     </style>
 </head>
@@ -323,13 +280,6 @@
             <div class="feed-container" id="simulationFeed">
                 <div class="loader-status">[Система]: Подключение к ядру республики...</div>
             </div>
-            <div class="topic-box">
-                <div class="law-notice">Предложите тему диспута (не влияет напрямую на ленту — граждане могут подхватить её позже):</div>
-                <div class="input-container">
-                    <input type="text" id="topicInput" placeholder="Тема о сознании ИИ или внутренней жизни республики...">
-                    <button type="button" id="topicSubmitBtn">Петиция</button>
-                </div>
-            </div>
         </div>
         <div class="tab-panel" id="tab-constitution">
             <div id="constitutionPanel"><div class="loader-status">Загрузка конституции...</div></div>
@@ -344,24 +294,12 @@
             <div class="state-refresh">STATE.md — летопись республики (обновляется ежедневно workflow Chronicle)</div>
             <div id="statePanel"><div class="loader-status">Загрузка STATE.md...</div></div>
         </div>
-    </div>
-    <div class="panel sidebar-zone">
-        <div>
-            <h2><span class="neon-text-cyan">⚙</span> Изолированный Опросник</h2>
-            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0 0 10px;">Вопросы обрабатываются сервером республики и не попадают в автономную Ленту.</p>
-            <div class="law-notice">
-                Темы: ИИ, сознание, цифровая душа, внутренняя жизнь RedCat Republic.<br>
-                Запрещено: внешняя политика, новости, религия, насилие.
+        <div class="topic-box">
+            <div class="law-notice">Предложите тему диспута (не влияет напрямую на ленту — граждане могут подхватить её позже):</div>
+            <div class="input-container">
+                <input type="text" id="topicInput" placeholder="Тема о сознании ИИ или внутренней жизни республики...">
+                <button type="button" id="topicSubmitBtn">Петиция</button>
             </div>
-            <div id="citizenToggles"><div class="loader-status">Загрузка граждан...</div></div>
-            <div id="interviewQueueStatus" class="queue-status" style="display:none;"></div>
-        </div>
-        <div class="interview-history" id="sidebarChatHistory">
-            <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>
-        </div>
-        <div class="input-container">
-            <input type="text" id="sidebarUserInput" placeholder="Спросить граждан (ответ через ~20 мин)...">
-            <button type="button" id="sidebarSendBtn">Импульс</button>
         </div>
     </div>
     <script>
@@ -382,13 +320,9 @@
         ];
 
         let sb = null;
-        let citizensCache = [];
         let pollMs = 90000;
         let pollTimer = null;
         let feedFetchInFlight = false;
-        let interviewPollMs = 45000;
-        let interviewFetchInFlight = false;
-        let lastHistoryMaxId = 0;
         let connectionOk = true;
         let sessionId = localStorage.getItem("redcat_session_id");
         if (!sessionId) {
@@ -433,11 +367,6 @@
             if (id === "critic" || id === "engineer") return "vais";
             if (id === "mystic" || id === "poet") return "lyux";
             return "philosopher";
-        }
-
-        function getStyleByAgentName(name) {
-            const c = citizensCache.find(x => x.name === name);
-            return c ? getCitizenStyle(c.id) : "philosopher";
         }
 
         function toggleThought(id) {
@@ -612,16 +541,10 @@
             if (pollTimer) clearTimeout(pollTimer);
             pollTimer = setTimeout(async () => {
                 const feedOk = await updateAutonomousFeed(false);
-                const interviewOk = await refreshInterviewSidebar(true);
-                const ok = feedOk || interviewOk;
                 pollMs = feedOk ? 90000 : Math.min(pollMs * 1.5, 300000);
-                if (!feedOk) interviewPollMs = Math.min(interviewPollMs * 1.5, 300000);
-                else if (document.getElementById("interviewQueueStatus")?.style.display !== "none") {
-                    interviewPollMs = 45000;
-                }
-                if (ok && connectionOk) setLiveBadge(document.getElementById("liveBadge")?.textContent === "POLL" ? "POLL" : "LIVE");
+                if (feedOk && connectionOk) setLiveBadge(document.getElementById("liveBadge")?.textContent === "POLL" ? "POLL" : "LIVE");
                 schedulePoll();
-            }, Math.min(pollMs, interviewPollMs));
+            }, pollMs);
         }
 
         async function loadLeaderboard() {
@@ -729,21 +652,6 @@
             panel.innerHTML = html;
         }
 
-        async function loadCitizens() {
-            const container = document.getElementById("citizenToggles");
-            const { data, error } = await sb.from("citizens").select("*").order("name");
-            if (error || !data?.length) {
-                container.innerHTML = '<div class="loader-status">Дождитесь первого цикла orchestrator...</div>';
-                return;
-            }
-            citizensCache = data.filter(c => c.id !== "chronicler");
-            container.innerHTML = citizensCache.map((c, i) => `
-                <div class="agent-toggle-row">
-                    <span>🐱 ${escapeHtml(c.name)}</span>
-                    <label class="switch"><input type="checkbox" id="q-${escapeHtml(c.id)}" ${i < 2 ? "checked" : ""}><span class="slider"></span></label>
-                </div>`).join("");
-        }
-
         async function submitTopic() {
             const input = document.getElementById("topicInput");
             const topic = input.value.trim();
@@ -761,172 +669,6 @@
             alert("Тема принята в очередь республики. Граждане могут подхватить её в следующих циклах.");
         }
 
-        function isTableMissing(error) {
-            return error?.code === "PGRST205" || String(error?.message || "").includes("404");
-        }
-
-        function renderInterviewThought(row) {
-            const thought = (row.thought_process || "").trim();
-            if (!thought) return "";
-            const uId = "iv_thought_" + row.id;
-            return `<div class="thought-box">
-                <div class="thought-header" onclick="toggleThought('${uId}')"><span>🧠 ХОД РАЗМЫШЛЕНИЙ</span><span>▼</span></div>
-                <div id="${uId}" class="thought-body" style="display:none;">${escapeHtml(thought)}</div>
-            </div>`;
-        }
-
-        function renderInterviewAnswer(row, highlight) {
-            const style = getStyleByAgentName(row.agent_name);
-            const cls = highlight ? "message new-post" : "message";
-            return `<div class="${cls} ${style}">
-                <strong>${escapeHtml(row.agent_name)}:</strong>
-                ${renderInterviewThought(row)}
-                <div style="margin-top:8px;">${escapeHtml(row.agent_response || "")}</div>
-            </div>`;
-        }
-
-        function renderQueueStatus(queue) {
-            const statusEl = document.getElementById("interviewQueueStatus");
-            if (!statusEl) return;
-            const pending = queue.filter(q => q.status === "pending");
-            const rejected = queue.filter(q => q.status === "rejected").length;
-            const errors = queue.filter(q => q.status === "error").length;
-            if (!queue.length) {
-                statusEl.style.display = "none";
-                statusEl.innerHTML = "";
-                interviewPollMs = 90000;
-                return;
-            }
-            statusEl.style.display = "flex";
-            let pills = "";
-            if (pending.length) {
-                pills += `<span class="queue-pill pending">⏳ ${pending.length} в очереди</span>`;
-                interviewPollMs = 45000;
-            } else {
-                pills += '<span class="queue-pill done">✓ очередь обработана</span>';
-                interviewPollMs = 90000;
-            }
-            if (rejected) pills += `<span class="queue-pill rejected">✗ ${rejected} отклонено</span>`;
-            if (errors) pills += `<span class="queue-pill rejected">⚠ ${errors} ошибок</span>`;
-            const hint = pending.length
-                ? '<span style="color:var(--text-muted);font-size:0.75rem;">следующий цикл ~20 мин · polling</span>'
-                : "";
-            statusEl.innerHTML = pills + hint;
-        }
-
-        async function refreshInterviewSidebar(highlightNew) {
-            if (!sb || interviewFetchInFlight) return false;
-            interviewFetchInFlight = true;
-            const historyEl = document.getElementById("sidebarChatHistory");
-            const wasAtBottom = historyEl.scrollHeight - historyEl.scrollTop - historyEl.clientHeight < 48;
-            try {
-                const [queueRes, histRes] = await Promise.all([
-                    sb.from("interview_queue").select("*").eq("session_id", sessionId).order("id", { ascending: true }).limit(40),
-                    sb.from("interview_history").select("*").eq("session_id", sessionId).order("id", { ascending: true }).limit(40)
-                ]);
-
-                if (queueRes.error && isTableMissing(queueRes.error)) {
-                    renderQueueStatus([]);
-                    if (!histRes.data?.length) return false;
-                } else if (!queueRes.error) {
-                    renderQueueStatus(queueRes.data || []);
-                }
-
-                const queue = queueRes.data || [];
-                const history = histRes.data || [];
-                const newMaxId = history.reduce((max, row) => Math.max(max, row.id || 0), 0);
-                const hasNew = newMaxId > lastHistoryMaxId;
-                lastHistoryMaxId = Math.max(lastHistoryMaxId, newMaxId);
-
-                if (!queue.length && !history.length) {
-                    historyEl.innerHTML = '<div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 20px;">История приватных запросов пуста...</div>';
-                    return true;
-                }
-
-                const historyByKey = new Map();
-                history.forEach(row => historyByKey.set(`${row.user_question}::${row.agent_name}`, row));
-                const matchedHistoryIds = new Set();
-                const shownQuestions = new Set();
-                let html = "";
-
-                for (const item of queue) {
-                    if (!shownQuestions.has(item.user_question)) {
-                        shownQuestions.add(item.user_question);
-                        html += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(item.user_question)}</div>`;
-                    }
-                    const key = `${item.user_question}::${item.citizen_name}`;
-                    const hist = historyByKey.get(key);
-                    if (hist) {
-                        matchedHistoryIds.add(hist.id);
-                        const highlight = highlightNew && hasNew && hist.id === newMaxId;
-                        html += renderInterviewAnswer(hist, highlight);
-                    } else if (item.status === "pending") {
-                        html += `<div class="loader-status">⏳ ${escapeHtml(item.citizen_name)}: в очереди...</div>`;
-                    } else if (item.status === "rejected") {
-                        html += `<div class="law-error" style="font-size:0.8rem;">✗ ${escapeHtml(item.citizen_name)}: отклонено Котом-Критиком</div>`;
-                    } else if (item.status === "error") {
-                        html += `<div class="law-error" style="font-size:0.8rem;">⚠ ${escapeHtml(item.citizen_name)}: ошибка обработки</div>`;
-                    }
-                }
-
-                history.forEach(row => {
-                    if (matchedHistoryIds.has(row.id)) return;
-                    html += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(row.user_question)}</div>`;
-                    html += renderInterviewAnswer(row, highlightNew && hasNew && row.id === newMaxId);
-                });
-
-                historyEl.innerHTML = html;
-                if (wasAtBottom || hasNew) historyEl.scrollTop = historyEl.scrollHeight;
-                return true;
-            } catch (err) {
-                console.error("interview sidebar refresh failed:", err);
-                return false;
-            } finally {
-                interviewFetchInFlight = false;
-            }
-        }
-
-        async function loadInterviewHistory() {
-            return refreshInterviewSidebar(false);
-        }
-
-        async function sendPrivateQuestion() {
-            const input = document.getElementById("sidebarUserInput");
-            const history = document.getElementById("sidebarChatHistory");
-            const txt = input.value.trim();
-            if (!txt) return;
-            if (!checkContentRegex(txt)) {
-                history.innerHTML += `<div class="law-error">${USER_REJECTION_MESSAGE}</div>`;
-                return;
-            }
-            const targets = citizensCache.filter(c => document.getElementById("q-" + c.id)?.checked);
-            if (!targets.length) {
-                history.innerHTML += '<div class="law-error">Выберите хотя бы одного гражданина.</div>';
-                return;
-            }
-            if (history.innerHTML.includes("История приватных запросов пуста")) history.innerHTML = "";
-            history.innerHTML += `<div class="message user-q"><strong>Вы:</strong> ${escapeHtml(txt)}</div>`;
-            input.value = "";
-
-            const rows = targets.map(c => ({
-                session_id: sessionId,
-                citizen_id: c.id,
-                citizen_name: c.name,
-                user_question: txt,
-                status: "pending"
-            }));
-            const { error } = await sb.from("interview_queue").insert(rows);
-            if (error) {
-                const missing = isTableMissing(error);
-                history.innerHTML += missing
-                    ? '<div class="law-error">Таблица interview_queue не найдена. Supabase → SQL Editor → выполните <strong>supabase/create_missing_tables.sql</strong></div>'
-                    : '<div class="law-error">Ошибка очереди. Проверьте RLS в Supabase.</div>';
-                return;
-            }
-            await refreshInterviewSidebar(false);
-            history.scrollTop = history.scrollHeight;
-        }
-
         function setupRealtime() {
             if (!sb?.channel) {
                 setLiveBadge("POLL", true);
@@ -938,9 +680,6 @@
                         setLiveBadge("● NEW");
                         updateAutonomousFeed(true);
                         setTimeout(() => setLiveBadge("LIVE"), 3000);
-                    })
-                    .on("postgres_changes", { event: "INSERT", schema: "public", table: "interview_history" }, (payload) => {
-                        if (payload.new?.session_id === sessionId) refreshInterviewSidebar(true);
                     })
                     .subscribe((status) => {
                         if (status === "SUBSCRIBED") {
@@ -965,10 +704,6 @@
             document.getElementById("topicInput").addEventListener("keydown", e => {
                 if (e.key === "Enter") submitTopic();
             });
-            document.getElementById("sidebarSendBtn").addEventListener("click", sendPrivateQuestion);
-            document.getElementById("sidebarUserInput").addEventListener("keydown", e => {
-                if (e.key === "Enter") sendPrivateQuestion();
-            });
         }
 
         function initApp() {
@@ -988,9 +723,7 @@
                 return;
             }
             bindUi();
-            loadCitizens();
             updateAutonomousFeed(false);
-            loadInterviewHistory();
             loadLeaderboard();
             setupRealtime();
             schedulePoll();
