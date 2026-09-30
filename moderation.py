@@ -21,6 +21,7 @@ def log_moderation_decision(
     citizen_name: Optional[str] = None,
     source_id: Optional[int] = None,
     agent_id: Optional[str] = None,
+    credits_fined: Optional[int] = None,
 ) -> None:
     preview = (content or "").strip()[:PREVIEW_LEN]
     if not preview:
@@ -36,6 +37,7 @@ def log_moderation_decision(
         "reason": reason,
         "judge_method": judge_method,
         "judge_name": "Кот-Критик" if judge_method == "critic_ai" else "CONTENT_LAW",
+        "credits_fined": int(credits_fined or 0),
     }
     try:
         supabase.table("moderation_log").insert(row).execute()

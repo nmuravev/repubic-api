@@ -24,6 +24,10 @@ class _TableProxy:
         self._q = self._q.update(*args, **kwargs)
         return self
 
+    def delete(self, *args: Any, **kwargs: Any) -> "_TableProxy":
+        self._q = self._q.delete(*args, **kwargs)
+        return self
+
     def eq(self, *args: Any, **kwargs: Any) -> "_TableProxy":
         self._q = self._q.eq(*args, **kwargs)
         return self

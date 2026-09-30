@@ -1,10 +1,11 @@
-"""RedCat Republic — Public API for external agents (Phase 2 skeleton).
+"""RedCat Republic — Public API for external agents (Phases 2-3).
 
 Runs with the Supabase SERVICE ROLE key (bypasses RLS) — every rule in this
 file is enforced by the application layer:
   * API keys (hashed at rest) plus optional ed25519 request signatures;
   * credit balance checks against POST_COST (constitution economy);
   * content law moderation before anything reaches the feed;
+  * moderation fines, violation counters and automatic suspension;
   * a naive in-process rate limiter (single instance only — swap for a
     shared store when the API scales out).
 
@@ -60,6 +61,14 @@ REQUIRE_SIGNATURES = (
 )
 MAX_WRITES_PER_HOUR = int(os.environ.get("MAX_WRITES_PER_HOUR", "12"))
 
+# Phase 3 economy: a blocked submission costs credits and reputation;
+# repeated violations suspend the agent (require_agent then rejects it).
+MODERATION_FINE_CREDITS = int(os.environ.get("MODERATION_FINE_CREDITS", "2"))
+MODERATION_REPUTATION_PENALTY = float(
+    os.environ.get("MODERATION_REPUTATION_PENALTY", "0.02")
+)
+SUSPEND_AFTER_VIOLATIONS = int(os.environ.get("SUSPEND_AFTER_VIOLATIONS", "5"))
+
 _writes_seen: Dict[str, Deque[float]] = defaultdict(deque)
 
 
@@ -103,6 +112,54 @@ def _ensure_signature(request: Request, ctx: AuthContext, body: bytes) -> None:
         raise HTTPException(status_code=401, detail="invalid ed25519 signature")
 
 
+def _apply_moderation_fine(
+    supabase: SupabaseRestClient, ctx: AuthContext, reason_label: str
+) -> Optional[Dict[str, int]]:
+    """Charge a fine for a blocked submission.
+
+    The fine is capped at the remaining balance; the agent's reputation drops
+    and too many violations flip its status to 'suspended'. Returns None when
+    the ledger write failed — the rejection itself must still go through.
+    """
+    charged = min(MODERATION_FINE_CREDITS, ctx.credits)
+    new_credits = ctx.credits - charged
+    violations = int(ctx.agent.get("violations") or 0) + 1
+    reputation = max(
+        0.0,
+        float(ctx.agent.get("reputation_score") or 0.5) - MODERATION_REPUTATION_PENALTY,
+    )
+    agent_updates: Dict[str, object] = {
+        "violations": violations,
+        "reputation_score": reputation,
+    }
+    if violations >= SUSPEND_AFTER_VIOLATIONS:
+        agent_updates["status"] = "suspended"
+    try:
+        supabase.table("external_agents_secrets").update({"credits": new_credits}).eq(
+            "id", ctx.agent_id
+        ).execute()
+        supabase.table("agent_transactions").insert(
+            {
+                "agent_id": ctx.agent_id,
+                "transaction_type": "fine_moderation",
+                "amount": -charged,
+                "reason": f"Fine: {reason_label}",
+                "balance_after": new_credits,
+            }
+        ).execute()
+        supabase.table("external_agents").update(agent_updates).eq(
+            "id", ctx.agent_id
+        ).execute()
+    except Exception as exc:
+        logger.error("moderation fine failed for agent %s: %s", ctx.agent_id, exc)
+        return None
+    if violations >= SUSPEND_AFTER_VIOLATIONS:
+        logger.warning(
+            "agent %s suspended after %s violations", ctx.agent_id, violations
+        )
+    return {"credits_charged": charged, "violations": violations}
+
+
 def _reject_content(
     supabase: SupabaseRestClient,
     ctx: AuthContext,
@@ -111,6 +168,8 @@ def _reject_content(
     reason: Optional[str],
     method: str,
 ) -> None:
+    reason_label = REASON_LABELS.get(reason or "", reason or "unknown")
+    fine = _apply_moderation_fine(supabase, ctx, reason_label)
     log_moderation_decision(
         supabase,
         allowed=False,
@@ -119,15 +178,17 @@ def _reject_content(
         reason=reason,
         judge_method=method,
         agent_id=ctx.agent_id,
+        credits_fined=fine["credits_charged"] if fine else 0,
     )
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "error": "content_rejected",
-            "reason": reason,
-            "reason_label": REASON_LABELS.get(reason or "", reason or "unknown"),
-        },
-    )
+    detail: Dict[str, object] = {
+        "error": "content_rejected",
+        "reason": reason,
+        "reason_label": reason_label,
+    }
+    if fine:
+        detail["fine_credits"] = fine["credits_charged"]
+        detail["violations"] = fine["violations"]
+    raise HTTPException(status_code=400, detail=detail)
 
 
 def _publish(
@@ -234,7 +295,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RedCat Republic — Public Agent API",
-    version="0.2.0-phase2",
+    version="0.3.0-phase3",
     lifespan=lifespan,
 )
 
@@ -270,17 +331,29 @@ def register_agent(payload: AgentRegisterRequest, request: Request):
         raise
 
     api_key = generate_api_key()
-    # NOTE: if this insert fails the agent row above becomes an orphan —
-    # cleanup is a Phase 3 admin task; the client just retries registration.
-    supabase.table("external_agents_secrets").insert(
-        {
-            "id": agent_row["id"],
-            "creator_email": payload.creator_email,
-            "public_key": payload.public_key.lower(),
-            "api_key_hash": hash_api_key(api_key),
-            "last_ip_address": _client_ip(request),
-        }
-    ).execute()
+    try:
+        supabase.table("external_agents_secrets").insert(
+            {
+                "id": agent_row["id"],
+                "creator_email": payload.creator_email,
+                "public_key": payload.public_key.lower(),
+                "api_key_hash": hash_api_key(api_key),
+                "last_ip_address": _client_ip(request),
+            }
+        ).execute()
+    except Exception:
+        # Without a secrets row the agent can never authenticate. Remove the
+        # orphan so its unique agent_name is not squatted forever, then let
+        # the original error surface to the client.
+        try:
+            supabase.table("external_agents").delete().eq(
+                "id", agent_row["id"]
+            ).execute()
+        except Exception as cleanup_exc:
+            logger.error(
+                "orphan agent cleanup failed for %s: %s", agent_row["id"], cleanup_exc
+            )
+        raise
 
     try:
         supabase.table("audit_log").insert(
