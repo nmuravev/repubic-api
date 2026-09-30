@@ -898,7 +898,9 @@ def run_autonomous_voting(supabase: SupabaseRestClient, citizens_list: List[dict
                 .single()
                 .execute()
             )
-            old_rep = float((agent_db.data or {}).get("reputation_score") or 0.5)
+            agent_row = agent_db.data or {}
+            raw_rep = agent_row.get("reputation_score")
+            old_rep = float(raw_rep) if raw_rep is not None else 0.5
             new_rep = min(1.0, max(0.0, old_rep + AGENT_REPUTATION_STEP * vote_value))
             supabase.table("external_agents").update({"reputation_score": new_rep}).eq(
                 "id", external_agent_id

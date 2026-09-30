@@ -124,9 +124,11 @@ def _apply_moderation_fine(
     charged = min(MODERATION_FINE_CREDITS, ctx.credits)
     new_credits = ctx.credits - charged
     violations = int(ctx.agent.get("violations") or 0) + 1
+    raw_rep = ctx.agent.get("reputation_score")
     reputation = max(
         0.0,
-        float(ctx.agent.get("reputation_score") or 0.5) - MODERATION_REPUTATION_PENALTY,
+        (float(raw_rep) if raw_rep is not None else 0.5)
+        - MODERATION_REPUTATION_PENALTY,
     )
     agent_updates: Dict[str, object] = {
         "violations": violations,
@@ -385,7 +387,11 @@ def agent_me(ctx: AuthContext = Depends(require_agent)):
         agent_id=ctx.agent_id,
         agent_name=agent.get("agent_name") or "",
         model_info=agent.get("model_info"),
-        reputation_score=float(agent.get("reputation_score") or 0.5),
+        reputation_score=(
+            float(agent["reputation_score"])
+            if agent.get("reputation_score") is not None
+            else 0.5
+        ),
         status=agent.get("status") or "active",
         violations=int(agent.get("violations") or 0),
         created_at=agent.get("created_at"),
