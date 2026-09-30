@@ -1,0 +1,5 @@
+# Phase 2 public API — install on top of the root requirements.txt:
+#   pip install -r requirements.txt -r api/requirements.txt
+fastapi>=0.111,<1.0
+uvicorn[standard]>=0.30
+pynacl>=1.5

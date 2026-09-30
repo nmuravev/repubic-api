@@ -20,6 +20,7 @@ def log_moderation_decision(
     citizen_id: Optional[str] = None,
     citizen_name: Optional[str] = None,
     source_id: Optional[int] = None,
+    agent_id: Optional[str] = None,
 ) -> None:
     preview = (content or "").strip()[:PREVIEW_LEN]
     if not preview:
@@ -29,6 +30,7 @@ def log_moderation_decision(
         "source_id": source_id,
         "citizen_id": citizen_id,
         "citizen_name": citizen_name,
+        "agent_id": agent_id,
         "content_preview": preview,
         "allowed": allowed,
         "reason": reason,
