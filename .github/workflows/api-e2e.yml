@@ -1,0 +1,35 @@
+name: RedCat Agent API E2E
+
+# In-stack end-to-end check for the public agent API: FastAPI runs in-process
+# (TestClient) against production Supabase with the service-role key. No hosted
+# API server is involved — only GitHub Actions + Supabase, as per the stack
+# constraint. Manual dispatch only: the run creates a short-lived test agent
+# and removes it again in the same run.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: redcat-api-e2e
+  cancel-in-progress: false
+
+jobs:
+  api-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r api/requirements.txt httpx
+
+      - name: Run agent API end-to-end check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python validate_api_e2e.py
