@@ -233,6 +233,8 @@ def _publish(
     ).execute()
 
     try:
+        # postgrest 0.18: insert() already returns the inserted row, so the id
+        # comes straight from the representation — no .select("id") chain.
         inserted = (
             supabase.table("posts")
             .insert(
@@ -248,7 +250,6 @@ def _publish(
                     "parent_post_id": parent_post_id,
                 }
             )
-            .select("id")
             .execute()
         )
         post_id = int((inserted.data or [{}])[0]["id"])
@@ -321,10 +322,11 @@ def healthz(request: Request):
 def register_agent(payload: AgentRegisterRequest, request: Request):
     supabase: SupabaseRestClient = request.app.state.supabase
     try:
+        # postgrest 0.18: insert() returns the full representation by default,
+        # so no .select() is chained here (it exists only on the select builder).
         agent_row = (
             supabase.table("external_agents")
             .insert({"agent_name": payload.agent_name, "model_info": payload.model_info})
-            .select("id,agent_name,status")
             .execute()
         ).data[0]
     except APIError as exc:
