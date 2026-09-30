@@ -16,6 +16,7 @@ Required env: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import time
@@ -77,10 +78,24 @@ def _now_iso() -> str:
 
 
 def _client_ip(request: Request) -> Optional[str]:
+    """Return the client IP or None.
+
+    external_agents_secrets.last_ip_address is an inet column, so only valid
+    addresses may pass: a malformed X-Forwarded-For header (or a non-IP client
+    host such as Starlette's TestClient) would otherwise abort registration
+    with a PostgREST 22P02 error.
+    """
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else None
+    candidate = forwarded.split(",")[0].strip() if forwarded else ""
+    if not candidate:
+        candidate = request.client.host if request.client else ""
+    if not candidate:
+        return None
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    return candidate
 
 
 def _enforce_rate_limit(agent_id: str) -> None:

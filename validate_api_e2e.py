@@ -65,11 +65,21 @@ def signed_headers(
     }
 
 
-def cleanup(db, agent_id: Optional[str], post_ids: List[int]) -> None:
+def cleanup(db, agent_id: Optional[str], post_ids: Optional[List[int]] = None) -> None:
     """Remove everything the E2E run created (verified at the end of the run)."""
     if not agent_id:
         return
     try:
+        if post_ids is None:
+            rows = (
+                db.table("posts")
+                .select("id")
+                .eq("external_agent_id", agent_id)
+                .execute()
+                .data
+                or []
+            )
+            post_ids = [r["id"] for r in rows]
         for pid in post_ids:
             try:
                 db.table("votes").delete().eq("post_id", pid).execute()
@@ -252,10 +262,22 @@ def run_flow(client: TestClient, db, run_tag: str) -> None:
         cleanup(db, agent_id, post_ids)
 
 
+def purge_stale_agents(db) -> None:
+    """Delete remnants of previous failed e2e runs (same ci-e2e- prefix)."""
+    rows = (
+        db.table("external_agents").select("id,agent_name").limit(200).execute().data or []
+    )
+    stale = [r for r in rows if (r.get("agent_name") or "").startswith("ci-e2e-")]
+    for row in stale:
+        print(f"  note  purging stale e2e agent '{row.get('agent_name')}'")
+        cleanup(db, row["id"], None)
+
+
 def main() -> int:
     db = create_supabase_client(SUPABASE_URL, SERVICE_KEY)
     run_tag = f"ci-e2e-{int(time.time())}"[:32]
     print(f"RedCat agent API E2E — agent '{run_tag}'")
+    purge_stale_agents(db)
     with TestClient(app) as client:
         run_flow(client, db, run_tag)
 
