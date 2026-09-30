@@ -76,7 +76,9 @@ class TransactionEntry(BaseModel):
     transaction_type: str
     amount: int
     reason: Optional[str] = None
-    balance_after: int
+    # Non-financial entries (e.g. reputation_bonus with amount 0) carry no
+    # balance snapshot, so this stays optional.
+    balance_after: Optional[int] = None
     created_at: Optional[str] = None
 
 
