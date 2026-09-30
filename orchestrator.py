@@ -356,9 +356,10 @@ def call_openrouter(
         "temperature": 0.8,
     }
     # OpenRouter-native failover inside one request (if the primary slug 404s).
+    # OpenRouter caps the "models" array at 3 items, so we send primary + 2 backups.
     extras = [m for m in (route_fallbacks or []) if m and m != model_id]
     if extras:
-        payload["models"] = [model_id] + extras[:4]
+        payload["models"] = [model_id] + extras[:2]
 
     try:
         response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
